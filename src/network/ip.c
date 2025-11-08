@@ -3,6 +3,7 @@
 #include "mcu.h"
 #include "ethernet.h"
 #include "ip.h"
+#include "ntp.h"
 
 const uint8_t IPv4_ADDR[4] = {10, 1, 123, 1};
 
@@ -14,27 +15,28 @@ static uint16_t checksum16(const void *data, uint16_t len);
 ///////////////////////////////////////////////////////////////////////////////
 
 void process_packet(uint8_t *packet, eth_header_t *frame_header) {
-    ipv4_header_t *ip = (ipv4_header_t *)packet;
+    ipv4_header_t *ip_header = (ipv4_header_t *)packet;
 
-    if ((ip->version_ihl >> 4) != 4)
+    if ((ip_header->version_ihl >> 4) != 4)
         return; // Not IPv4
 
-    uint16_t ip_header_len = (ip->version_ihl & 0x0F) * 4;
-    uint16_t payload_len = ntohs(ip->total_length) - ip_header_len;
-    uint8_t *payload = ((uint8_t *)ip + ip_header_len);
+    uint16_t ip_header_len = (ip_header->version_ihl & 0x0F) * 4;
+    uint16_t payload_len = ntohs(ip_header->total_length) - ip_header_len;
+    uint8_t *payload = ((uint8_t *)ip_header + ip_header_len);
 
-    switch (ip->protocol) {
+    switch (ip_header->protocol) {
         case PROTO_ICMP:
-            process_icmp((icmp_header_t *)payload, frame_header, ip, payload_len);
+            process_icmp((icmp_header_t *)payload, ip_header, frame_header, payload_len);
             break;
         case PROTO_TCP:
             break;
         case PROTO_UDP:
+            process_udp((udp_header_t *)payload, ip_header, frame_header, payload_len);
             break;
     }
 }
 
-void process_icmp(icmp_header_t *icmp, eth_header_t *frame_header, ipv4_header_t *ip_pkt, uint16_t pkt_len) {
+void process_icmp(icmp_header_t *icmp, ipv4_header_t *ip_pkt, eth_header_t *frame_header, uint16_t pkt_len) {
     if (icmp->type != 8)
         return; // Not Echo Request
 
@@ -51,16 +53,20 @@ void process_icmp(icmp_header_t *icmp, eth_header_t *frame_header, ipv4_header_t
     ETH_send_frame(buffer - length, length);
 }
 
-void process_udp(udp_header_t *packet) {
-    uint16_t port = packet->dst_port;
+void process_udp(udp_header_t *packet, ipv4_header_t *ip_header, eth_header_t *frame_header, uint16_t pkt_len) {
+    uint16_t port = ntohs(packet->dst_port);
 
     switch(port) {
         case PORT_PTP_EVENT:
             break;
         case PORT_PTP_GENERAL:
             break;
+        case PORT_NTP:
+            receive_ntp_req((ntp_packet_t *)packet->data, packet, ip_header, frame_header);
+            break;
     }
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////
 //// Transmit /////////////////////////////////////////////////////////////////
@@ -114,7 +120,6 @@ uint16_t build_udp_header(uint8_t *buffer, uint16_t src_port, uint16_t dst_port,
     udp->length = htons(dg_len);
     udp->checksum = 0;
     memcpy(udp->data, data, data_len);
-    //udp->checksum = checksum16((uint8_t *)udp, dg_len);
 
     return dg_len;
 }

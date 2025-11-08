@@ -15,10 +15,11 @@
 
 #define PORT_PTP_EVENT   319
 #define PORT_PTP_GENERAL 320
+#define PORT_NTP         123
 
 extern const uint8_t IPv4_ADDR[4];
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint8_t  version_ihl;
     uint8_t  tos;
     uint16_t total_length;
@@ -48,8 +49,9 @@ typedef struct {
     uint8_t  data[];
 } udp_header_t;
 
-void process_packet(uint8_t *packet, eth_header_t *frame_header);
-void process_icmp(icmp_header_t *icmp, eth_header_t *frame_header, ipv4_header_t *ip, uint16_t len);
+void process_packet(uint8_t*, eth_header_t*);
+void process_icmp(icmp_header_t*, ipv4_header_t*, eth_header_t*, uint16_t);
+void process_udp(udp_header_t*, ipv4_header_t*, eth_header_t*, uint16_t);
 
 uint16_t build_ipv4_header(uint8_t *buffer, uint32_t src_ip, 
                            uint32_t dst_ip, uint16_t payload_len, 

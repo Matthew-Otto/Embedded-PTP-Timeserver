@@ -4,7 +4,13 @@
 static FIFO8_t *tx_fifo;
 static FIFO8_t *rx_fifo;
 
-void configure_basic_usart(USART_TypeDef *uart, uint16_t baudrate) {
+
+void init_uart(int32_t baudrate) {
+    // Configure USART2 clock
+    SET_BIT(RCC->APB1LENR, RCC_APB1LENR_USART2EN);
+    (void)READ_BIT(RCC->APB1LENR, RCC_APB1LENR_USART2EN);
+
+    USART_TypeDef *uart = (USART_TypeDef *)USART2;
     // Clear config and disable usart
     WRITE_REG(uart->CR1, 0);
     SET_BIT(uart->CR1, USART_CR1_FIFOEN); // enable FIFO
@@ -17,21 +23,11 @@ void configure_basic_usart(USART_TypeDef *uart, uint16_t baudrate) {
     //SET_BIT(uart->CR1, USART_CR1_TXFNFIE); // TX fifo not full
 
     SET_BIT(uart->CR1, USART_CR1_UE);     // enable UART
-}
 
-void init_uart(uint8_t uart_idx, uint16_t baudrate) {
-    switch (uart_idx) {
-        case 2:
-            // Configure USART2 clock
-            SET_BIT(RCC->APB1LENR, RCC_APB1LENR_USART2EN);
-            (void)READ_BIT(RCC->APB1LENR, RCC_APB1LENR_USART2EN);
-            // set basic configuration
-            configure_basic_usart(USART2, baudrate);
-            // enable interrupts
-            NVIC_SetPriority(USART2_IRQn, 5);
-            NVIC_EnableIRQ(USART2_IRQn);
-            break;
-    }
+    // enable interrupts
+    NVIC_SetPriority(USART2_IRQn, 5);
+    NVIC_EnableIRQ(USART2_IRQn);
+
 
     // TODO FIFO pair per uart
     tx_fifo = fifo8_init(256);

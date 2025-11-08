@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include "mcu.h"
-
-#include "gps.h"
+#include "ntp.h"
 
 /*
 //// TODO
@@ -18,9 +17,7 @@ int main(void) {
     GPIOD->BSRR = (uint32_t)GPIO_PIN_4 << 16;
 
     
-    while (1) {
-        __WFI();
-    }
+    ntp_process();
 
     return 0;
 }
