@@ -1,5 +1,6 @@
 #include "mcu.h"
 #include "fifo.h"
+#include "gpio.h"
 
 static FIFO8_t *tx_fifo;
 static FIFO8_t *rx_fifo;
@@ -21,7 +22,7 @@ void init_uart(int32_t baudrate) {
 
     SET_BIT(uart->CR1, USART_CR1_RXNEIE_RXFNEIE); // RX fifo not empty
     //SET_BIT(uart->CR1, USART_CR1_TXFNFIE); // TX fifo not full
-
+    
     SET_BIT(uart->CR1, USART_CR1_UE);     // enable UART
 
     // enable interrupts
@@ -35,6 +36,13 @@ void init_uart(int32_t baudrate) {
 }
 
 void USART2_IRQHandler(void) {
+    static uint8_t oneshot = 0;
+    if (oneshot == 0) {
+        disable_LED(RED_LED);
+        enable_LED(YELLOW_LED);
+        oneshot = 1;
+    }
+
     uint8_t data;
     // if data in rx hw fifo, put it in software fifo
     while (USART2->ISR & USART_ISR_RXNE_RXFNE) {

@@ -140,3 +140,41 @@ float gps_get_lat(void) {
 float gps_get_long(void) {
     return gps_data.longitude;
 }
+
+void gps_init(void) {
+    // configure gpio
+    configure_pin(GPIOD, GPIO_PIN_7, GPIO_MODE_IT_RISING, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, 0); // PPS
+    configure_pin(GPIOD, GPIO_PIN_6, GPIO_MODE_AF_PP, GPIO_PULLUP, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // RX
+    configure_pin(GPIOD, GPIO_PIN_5, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // TX
+    configure_pin(GPIOD, GPIO_PIN_4, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // GND
+    configure_pin(GPIOD, GPIO_PIN_3, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // VCC
+
+    // configure uart
+    init_uart(2, 9600);
+    
+    // power on gps via gpio pins
+    GPIOD->BSRR = (uint32_t)GPIO_PIN_4 << 16; // set gps gnd pin low
+    GPIOD->BSRR = (uint32_t)GPIO_PIN_3; // set gps vcc pin high
+    
+    enable_LED(RED_LED);
+
+    // configure pps interrupt
+    NVIC_SetPriority(EXTI7_IRQn, 3);
+    NVIC_EnableIRQ(EXTI7_IRQn);
+}
+
+void EXTI7_IRQHandler(void) {
+    // set frac bits here
+
+    
+    // if valid gps data, toggle green, else set yellow
+
+    // parse gps and update time
+
+    // TODO disable yellow when the gps says it's locked
+    disable_LED(YELLOW_LED);
+
+
+    toggle_LED(GREEN_LED);
+    SET_BIT(EXTI->RPR1, 0x1 << 7);
+}

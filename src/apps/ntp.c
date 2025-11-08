@@ -20,8 +20,8 @@ static ntp_packet_t resp_packet = {
 
 void get_time(uint32_t *sec, uint32_t *frac) {
     // BOZO: ns timer =/= fraction of a second
-    *sec = READ_REG(((ETH_TypeDef *)ETH)->MACSTSUR);
-    *frac = READ_REG(((ETH_TypeDef *)ETH)->MACSTNUR);
+    *sec = READ_REG(ETH->MACSTSUR);
+    *frac = READ_REG(ETH->MACSTNUR);
 }
 
 void receive_ntp_req(ntp_packet_t *ntp_packet, udp_header_t *udp_header, ipv4_header_t *ip_header, eth_header_t *frame_header) {

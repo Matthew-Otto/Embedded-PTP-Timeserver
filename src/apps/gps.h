@@ -12,6 +12,9 @@ typedef struct {
     int fix_quality;
 } gps_data_t;
 
+
+void EXTI7_IRQHandler(void);
+void gps_init(void);
 void parse_nmea_sentence(const char *sentence);
 void process_gps(void);
 float gps_get_lat(void);

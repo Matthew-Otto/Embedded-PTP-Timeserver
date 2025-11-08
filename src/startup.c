@@ -2,10 +2,8 @@
 
 #include "mcu.h"
 #include "clocks.h"
-#include "time.h"
-#include "ethernet.h"
 #include "gpio.h"
-#include "uart.h"
+#include "ethernet.h"
 
 extern uint32_t __stack_top;
 extern uint32_t _sidata;
@@ -39,12 +37,8 @@ void reset_handler(void) {
 
     // initialize system
     init_sysclk();
-    init_fpu();
-    TIME_init();
     GPIO_init();
     ETH_init();
-
-    init_uart(2, 9600);
 
     // enable interrupts
     __enable_irq();

@@ -326,7 +326,7 @@ void ETH_int_init() {
     SET_BIT(eth->DMACIER, dma_ints);
 
     // enable ETH interrupts in NVIC
-    NVIC_SetPriority(ETH_IRQn, 1);
+    NVIC_SetPriority(ETH_IRQn, 3);
     NVIC_EnableIRQ(ETH_IRQn);
 }
 

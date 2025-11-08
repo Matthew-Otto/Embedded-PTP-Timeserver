@@ -30,7 +30,23 @@ void configure_pin(GPIO_TypeDef *GPIO_bank, uint16_t pin, uint32_t mode, uint32_
     MODIFY_REG(GPIO_bank->PUPDR, 0x3 << pin_mode_ofst, pupd << pin_mode_ofst);
     MODIFY_REG(GPIO_bank->OSPEEDR, 0x3 << pin_mode_ofst, ospeed << pin_mode_ofst);
     MODIFY_REG(GPIO_bank->AFR[pin_num >> 3], 0xF << pin_alt_ofst, alternate << pin_alt_ofst);
+
+    // TODO update to support all modes on all pins
+    if ((mode & EXTI_MODE) == EXTI_MODE) {
+        // set rising and enable interrupt
+        SET_BIT(EXTI->RTSR1, pin);
+        SET_BIT(EXTI->IMR1, pin);
+
+        // set exti7 to pin d7
+        uint32_t clr_mask = 0xF << ((pin_num & 0x3) * 8);
+        uint32_t set_mask = 0x3 << ((pin_num & 0x3) * 8); // 3 is bank d
+        MODIFY_REG(EXTI->EXTICR[pin_num >> 2U], clr_mask, set_mask);
+
+        volatile int  x = READ_REG(EXTI->EXTICR[1]);
+        volatile int y = 0;
+    }
 };
+
 
 void configure_button(void) {
     GPIO_TypeDef *GPIO_bank = GPIOC;
@@ -97,21 +113,11 @@ void toggle_LED(enum LED_COLOR color) {
     }
 }
 
-void configure_gps(void) {
-    // PPS
-    configure_pin(GPIOD, GPIO_PIN_7, GPIO_MODE_INPUT, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, 0);
-    // RX
-    configure_pin(GPIOD, GPIO_PIN_6, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2);
-    // TX
-    configure_pin(GPIOD, GPIO_PIN_5, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2);
-    // GND
-    configure_pin(GPIOD, GPIO_PIN_4, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0);
-    // VCC
-    configure_pin(GPIOD, GPIO_PIN_3, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0);
-}
-
 
 void GPIO_init() {
+    static uint8_t once = 0;
+    if (once) return;
+    once = 1;
 
     GPIO_clk_en('A');
     GPIO_clk_en('B');
@@ -128,7 +134,4 @@ void GPIO_init() {
     configure_pin(GPIOG, GPIO_PIN_4, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0);
 
     configure_button();
-    configure_gps();
-
-    enable_LED(YELLOW_LED);
 }

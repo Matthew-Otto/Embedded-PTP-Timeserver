@@ -1,5 +1,6 @@
 #include "mcu.h"
 
 void suspend(void) {
-    __WFI();
+    while(1);
+    //__WFI();
 }
