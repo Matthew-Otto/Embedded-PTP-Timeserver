@@ -29,7 +29,6 @@ static uint32_t current_rx_desc_idx = 0;
 static uint32_t current_tx_desc_idx = 0;
 static uint32_t current_tx_buffer_idx = 0;
 
-static ETH_TypeDef *eth = ETH;
 
 // Forward declarations
 static inline void init_read_descriptor(volatile ETH_rx_rd_desc_t *desc, uint16_t idx);
@@ -41,23 +40,23 @@ void ETH_int_init(void);
 
 
 void ETH_IRQHandler(void) {
-    volatile uint32_t int_src = READ_REG(eth->DMAISR);
+    volatile uint32_t int_src = READ_REG(ETH->DMAISR);
     volatile uint32_t isr;
     if (int_src & ETH_DMAISR_DMACIS) {
-        isr = READ_REG(eth->DMACSR);
+        isr = READ_REG(ETH->DMACSR);
         // Receive frame interrupt
         if (isr & ETH_DMACIER_RIE) ETH_receive_frame();
     }
     else if (int_src & ETH_DMAISR_MACIS) {
-        isr = READ_REG(eth->MACISR);
+        isr = READ_REG(ETH->MACISR);
     }
     else if (int_src & ETH_DMAISR_MTLIS) {
-        isr = READ_REG(eth->MTLISR);
+        isr = READ_REG(ETH->MTLISR);
     }
 
     // clear all DMA interrupt bits
     // The interrupt is cleared only when all the bits of interrupt status register (ETH_DMAISR) are cleared.
-    WRITE_REG(eth->DMACSR, 0xFFFFFFFF);
+    WRITE_REG(ETH->DMACSR, 0xFFFFFFFF);
 }
 
 
@@ -100,7 +99,7 @@ int ETH_receive_frame(){
     }
 
     // Update RX descriptor tail pointer;
-    WRITE_REG(eth->DMACRDTPR, (uint32_t)&dma_rx_desc[current_rx_desc_idx]);
+    WRITE_REG(ETH->DMACRDTPR, (uint32_t)&dma_rx_desc[current_rx_desc_idx]);
 
     // BOZO check next descriptor just in case
     volatile ETH_rx_wb_desc_t *wb_desc2 = &dma_rx_desc[current_rx_desc_idx].wb;
@@ -130,7 +129,7 @@ void ETH_send_frame(uint8_t *buffer, uint16_t length){
     // Update current TX descriptor idx
     current_tx_desc_idx = (current_tx_desc_idx + 1) % TX_DSC_CNT;
     // Update TX descriptor tail pointer;
-    WRITE_REG(eth->DMACTDTPR, (uint32_t)&dma_tx_desc[current_tx_desc_idx]);
+    WRITE_REG(ETH->DMACTDTPR, (uint32_t)&dma_tx_desc[current_tx_desc_idx]);
 }
 
 
@@ -182,12 +181,12 @@ void ETH_init(){
     ETH_int_init();
     
     // Start DMA transmit and receive
-    SET_BIT(eth->DMACTCR, ETH_DMACTCR_ST);
-    SET_BIT(eth->DMACRCR, ETH_DMACRCR_SR);
+    SET_BIT(ETH->DMACTCR, ETH_DMACTCR_ST);
+    SET_BIT(ETH->DMACRCR, ETH_DMACRCR_SR);
     
     // Enable MAC transmitter and receiver
-    SET_BIT(eth->MACCR, ETH_MACCR_TE);
-    SET_BIT(eth->MACCR, ETH_MACCR_RE);
+    SET_BIT(ETH->MACCR, ETH_MACCR_TE);
+    SET_BIT(ETH->MACCR, ETH_MACCR_RE);
 }
 
 
@@ -214,22 +213,22 @@ void ETH_IO_init(void) {
 
 
 uint16_t read_PHY_reg(uint8_t phy_addr) {
-    MODIFY_REG(eth->MACMDIOAR, ETH_MACMDIOAR_MOC_RD, 0b11 << 2); // read mode
-    MODIFY_REG(eth->MACMDIOAR, ETH_MACMDIOAR_RDA, (phy_addr & 0x1F) << 16); // reg addr
-    SET_BIT(eth->MACMDIOAR, ETH_MACMDIOAR_MB);
+    MODIFY_REG(ETH->MACMDIOAR, ETH_MACMDIOAR_MOC_RD, 0b11 << 2); // read mode
+    MODIFY_REG(ETH->MACMDIOAR, ETH_MACMDIOAR_RDA, (phy_addr & 0x1F) << 16); // reg addr
+    SET_BIT(ETH->MACMDIOAR, ETH_MACMDIOAR_MB);
 
-    while (READ_BIT(eth->MACMDIOAR, ETH_MACMDIOAR_MB));
-    return (uint16_t)READ_BIT(eth->MACMDIODR, ETH_MACMDIODR_MD);
+    while (READ_BIT(ETH->MACMDIOAR, ETH_MACMDIOAR_MB));
+    return (uint16_t)READ_BIT(ETH->MACMDIODR, ETH_MACMDIODR_MD);
 }
 
 
 void write_PHY_reg(uint8_t phy_addr, uint16_t data) {
-    MODIFY_REG(eth->MACMDIOAR, ETH_MACMDIOAR_MOC_RD, 0b01 << 2); // write mode
-    MODIFY_REG(eth->MACMDIODR, ETH_MACMDIODR_MD, data);
-    MODIFY_REG(eth->MACMDIOAR, ETH_MACMDIOAR_RDA, (phy_addr & 0x1F) << 16); // reg addr
-    SET_BIT(eth->MACMDIOAR, ETH_MACMDIOAR_MB);
+    MODIFY_REG(ETH->MACMDIOAR, ETH_MACMDIOAR_MOC_RD, 0b01 << 2); // write mode
+    MODIFY_REG(ETH->MACMDIODR, ETH_MACMDIODR_MD, data);
+    MODIFY_REG(ETH->MACMDIOAR, ETH_MACMDIOAR_RDA, (phy_addr & 0x1F) << 16); // reg addr
+    SET_BIT(ETH->MACMDIOAR, ETH_MACMDIOAR_MB);
 
-    while (READ_BIT(eth->MACMDIOAR, ETH_MACMDIOAR_MB));
+    while (READ_BIT(ETH->MACMDIOAR, ETH_MACMDIOAR_MB));
 }
 
 
@@ -245,30 +244,30 @@ void ETH_PHY_init(void) {
     (void)SBS->PMCR; // dummy read to sync with ETH
 
     // set MDIO clock
-    MODIFY_REG(eth->MACMDIOAR, ETH_MACMDIOAR_CR, ETH_MACMDIOAR_CR_DIV124);
+    MODIFY_REG(ETH->MACMDIOAR, ETH_MACMDIOAR_CR, ETH_MACMDIOAR_CR_DIV124);
     // Now it is possible to read PHY registers via MDIO with read_PHY_reg()
 }
 
 
 void ETH_MAC_init(void) {
     // Ethernet Software reset
-    SET_BIT(eth->DMAMR, ETH_DMAMR_SWR);
-    while (READ_BIT(eth->DMAMR, ETH_DMAMR_SWR) != 0) {};
+    SET_BIT(ETH->DMAMR, ETH_DMAMR_SWR);
+    while (READ_BIT(ETH->DMAMR, ETH_DMAMR_SWR) != 0) {};
 
     //////// Configure MAC ////////
     // configure MAC address
-    WRITE_REG(eth->MACA0HR, ((uint32_t)MACAddr[5] << 8 | (uint32_t)MACAddr[4]));
-    WRITE_REG(eth->MACA0LR, ((uint32_t)MACAddr[3] << 24 | (uint32_t)MACAddr[2] << 16 | 
+    WRITE_REG(ETH->MACA0HR, ((uint32_t)MACAddr[5] << 8 | (uint32_t)MACAddr[4]));
+    WRITE_REG(ETH->MACA0LR, ((uint32_t)MACAddr[3] << 24 | (uint32_t)MACAddr[2] << 16 | 
                              (uint32_t)MACAddr[1] << 8 | (uint32_t)MACAddr[0]));
 
     // configure IPv4 address
-    WRITE_REG(eth->MACARPAR, (IPv4_ADDR[0]<<24 | IPv4_ADDR[1]<<16 | IPv4_ADDR[2]<<8 | IPv4_ADDR[3]));
+    WRITE_REG(ETH->MACARPAR, (IPv4_ADDR[0]<<24 | IPv4_ADDR[1]<<16 | IPv4_ADDR[2]<<8 | IPv4_ADDR[3]));
 
     // Disable MAC address filtering (Promiscuous Mode)
-    WRITE_REG(eth->MACPFR, ETH_MACPFR_PR);
+    WRITE_REG(ETH->MACPFR, ETH_MACPFR_PR);
 
     // operating mode config
-    uint32_t cfg = eth->MACCR;
+    uint32_t cfg = ETH->MACCR;
     cfg |= ETH_MACCR_ARP; // ARP offloading
     cfg |= ETH_MACCR_SARC_REPADDR0; // automatic source MAC address 1 replacement
     cfg |= ETH_MACCR_IPC; // checksum offload
@@ -276,14 +275,14 @@ void ETH_MAC_init(void) {
     cfg |= ETH_MACCR_ACS; // automatic pad/crc stripping
     cfg |= ETH_MACCR_FES; // 100 Mbps
     cfg |= ETH_MACCR_DM; // full duplex
-    WRITE_REG(eth->MACCR, cfg);
+    WRITE_REG(ETH->MACCR, cfg);
 
     //////// Configure MTL ////////
-    SET_BIT(eth->MTLRQOMR, ETH_MTLRQOMR_DISTCPEF); // don't drop packets that fail CRC
-    SET_BIT(eth->MTLRQOMR, ETH_MTLRQOMR_FEP); // forward error packets
-    SET_BIT(eth->MTLRQOMR, ETH_MTLRQOMR_RSF); // receive queue store and forward (not cut-through)
+    SET_BIT(ETH->MTLRQOMR, ETH_MTLRQOMR_DISTCPEF); // don't drop packets that fail CRC
+    SET_BIT(ETH->MTLRQOMR, ETH_MTLRQOMR_FEP); // forward error packets
+    SET_BIT(ETH->MTLRQOMR, ETH_MTLRQOMR_RSF); // receive queue store and forward (not cut-through)
 
-    WRITE_REG(eth->MTLTQOMR, 0x2 << 2); // Enable transmit Queue
+    WRITE_REG(ETH->MTLTQOMR, 0x2 << 2); // Enable transmit Queue
 }
 
 
@@ -297,9 +296,9 @@ static inline void init_read_descriptor(volatile ETH_rx_rd_desc_t *desc, uint16_
 void ETH_DMA_init(void) {
     // TX descriptors
     // Set Transmit Descriptor Ring Length
-    WRITE_REG(eth->DMACTDRLR, TX_DSC_CNT-1);
+    WRITE_REG(ETH->DMACTDRLR, TX_DSC_CNT-1);
     // Set Transmit Descriptor List Address
-    WRITE_REG(eth->DMACTDLAR, (uint32_t)&dma_tx_desc[0]);
+    WRITE_REG(ETH->DMACTDLAR, (uint32_t)&dma_tx_desc[0]);
 
     // RX descriptors
     for (int i = 0; i < RX_DSC_CNT; i++) {
@@ -307,13 +306,13 @@ void ETH_DMA_init(void) {
         init_read_descriptor(desc, i);
     }
     // Set Receive Buffers Length
-    MODIFY_REG(eth->DMACRCR, ETH_DMACRCR_RBSZ, BUFFER_SIZE << 1);
+    MODIFY_REG(ETH->DMACRCR, ETH_DMACRCR_RBSZ, BUFFER_SIZE << 1);
     // Set Receive Descriptor Ring Length
-    WRITE_REG(eth->DMACRDRLR, RX_DSC_CNT-1);
+    WRITE_REG(ETH->DMACRDRLR, RX_DSC_CNT-1);
     // Set Receive Descriptor List Address
-    WRITE_REG(eth->DMACRDLAR, (uint32_t)&dma_rx_desc[0]);
+    WRITE_REG(ETH->DMACRDLAR, (uint32_t)&dma_rx_desc[0]);
     // Set Receive Descriptor Tail pointer Address
-    WRITE_REG(eth->DMACRDTPR, (uint32_t)&dma_rx_desc[RX_DSC_CNT-1]);
+    WRITE_REG(ETH->DMACRDTPR, (uint32_t)&dma_rx_desc[RX_DSC_CNT-1]);
 }
 
 
@@ -323,7 +322,7 @@ void ETH_int_init() {
     dma_ints |= ETH_DMACIER_NIE;  // Normal DMA ints bulk-enable
     dma_ints |= ETH_DMACIER_RIE;  // Receive interrupts
     dma_ints |= ETH_DMACIER_TIE;  // Transmit interrupts
-    SET_BIT(eth->DMACIER, dma_ints);
+    SET_BIT(ETH->DMACIER, dma_ints);
 
     // enable ETH interrupts in NVIC
     NVIC_SetPriority(ETH_IRQn, 3);
@@ -334,78 +333,78 @@ void ETH_PTP_init() {
     uint32_t cfg;
 
     // Mask the Timestamp Trigger interrupt
-    CLEAR_BIT(eth->MACIER, ETH_MACIER_TSIE);
+    CLEAR_BIT(ETH->MACIER, ETH_MACIER_TSIE);
     
     // Enable timestamping
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSENA);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSENA);
 
     // configure subsecond increment value
     const int CLK_PERIOD = 4; // clk_ptp_i period (4ns for 250MHz)
-    SET_BIT(eth->MACSSIR, 8 << ETH_MACMACSSIR_SSINC_Pos);
-    //SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSCTRLSSR);
+    SET_BIT(ETH->MACSSIR, 8 << ETH_MACMACSSIR_SSINC_Pos);
+    //SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCTRLSSR);
 
     // Update system time
-    WRITE_REG(eth->MACSTSUR, 0);
-    WRITE_REG(eth->MACSTNUR, 0);
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSINIT); // initialize timestamp value
-    while (READ_BIT(eth->MACTSCR, ETH_MACTSCR_TSINIT)); // wait for completion
+    WRITE_REG(ETH->MACSTSUR, 0);
+    WRITE_REG(ETH->MACSTNUR, 0);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSINIT); // initialize timestamp value
+    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSINIT)); // wait for completion
 
     // Enable PTP offloading features
 #ifdef MASTER
     // Automatic PTP Sync messages
-    MODIFY_REG(eth->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);
-    MODIFY_REG(eth->MACTSCR, ETH_MACTSCR_TSMSTRENA_Msk, 1 << ETH_MACTSCR_TSMSTRENA_Pos);
-    MODIFY_REG(eth->MACTSCR, ETH_MACTSCR_TSEVNTENA_Msk, 1 << ETH_MACTSCR_TSEVNTENA_Pos);
-    MODIFY_REG(eth->MACTSCR, ETH_MACTSCR_TSIPV4ENA_Msk, 1 << ETH_MACTSCR_TSIPV4ENA_Pos);
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSIPENA);
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSVER2ENA);
+    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);
+    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSMSTRENA_Msk, 1 << ETH_MACTSCR_TSMSTRENA_Pos);
+    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSEVNTENA_Msk, 1 << ETH_MACTSCR_TSEVNTENA_Pos);
+    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSIPV4ENA_Msk, 1 << ETH_MACTSCR_TSIPV4ENA_Pos);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSIPENA);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSVER2ENA);
 
     // Enable PTP offloading
     cfg = 0;
     cfg |= ETH_MACPOCR_PTOEN;
     cfg |= ETH_MACPOCR_ASYNCEN;
     //cfg |= domain_num << ETH_MACPOCR_DN_Pos;
-    WRITE_REG(eth->MACPOCR, cfg);
+    WRITE_REG(ETH->MACPOCR, cfg);
 
     // Configure Source port identity
-    WRITE_REG(eth->MACSPI0R, 0xdeadbeef);
-    WRITE_REG(eth->MACSPI1R, 0xd066f00d);
-    WRITE_REG(eth->MACSPI2R, 0x1234);
+    WRITE_REG(ETH->MACSPI0R, 0xdeadbeef);
+    WRITE_REG(ETH->MACSPI1R, 0xd066f00d);
+    WRITE_REG(ETH->MACSPI2R, 0x1234);
 
     // Set automatic sync message period
-    MODIFY_REG(eth->MACLMIR, ETH_MACLMIR_LSI_Msk, 0 << ETH_MACLMIR_LSI_Pos);
+    MODIFY_REG(ETH->MACLMIR, ETH_MACLMIR_LSI_Msk, 0 << ETH_MACLMIR_LSI_Pos);
 #else
     // Automatic PTP Sync messages
-    MODIFY_REG(eth->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);
-    MODIFY_REG(eth->MACTSCR, ETH_MACTSCR_TSMSTRENA_Msk, 0 << ETH_MACTSCR_TSMSTRENA_Pos);
-    MODIFY_REG(eth->MACTSCR, ETH_MACTSCR_TSEVNTENA_Msk, 1 << ETH_MACTSCR_TSEVNTENA_Pos);
-    MODIFY_REG(eth->MACTSCR, ETH_MACTSCR_TSIPV4ENA_Msk, 1 << ETH_MACTSCR_TSIPV4ENA_Pos);
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSIPENA);
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSVER2ENA);
+    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);
+    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSMSTRENA_Msk, 0 << ETH_MACTSCR_TSMSTRENA_Pos);
+    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSEVNTENA_Msk, 1 << ETH_MACTSCR_TSEVNTENA_Pos);
+    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSIPV4ENA_Msk, 1 << ETH_MACTSCR_TSIPV4ENA_Pos);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSIPENA);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSVER2ENA);
 
     // Fine correction method
-    WRITE_REG(eth->MACTSAR, 0);
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSADDREG);
-    while (READ_BIT(eth->MACTSCR, ETH_MACTSCR_TSADDREG));
-    //SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSCFUPDT); // use fine correction
+    WRITE_REG(ETH->MACTSAR, 0);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG);
+    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));
+    //SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT); // use fine correction
 
     // Enable PTP offloading
     cfg = 0;
     cfg |= ETH_MACPOCR_PTOEN;
     //cfg |= domain_num << ETH_MACPOCR_DN_Pos;
-    WRITE_REG(eth->MACPOCR, cfg);
+    WRITE_REG(ETH->MACPOCR, cfg);
 
     // Configure Source port identity
-    WRITE_REG(eth->MACSPI0R, 0xdeadbeef);
-    WRITE_REG(eth->MACSPI1R, 0xd066f00d);
-    WRITE_REG(eth->MACSPI2R, 0x4321);
+    WRITE_REG(ETH->MACSPI0R, 0xdeadbeef);
+    WRITE_REG(ETH->MACSPI1R, 0xd066f00d);
+    WRITE_REG(ETH->MACSPI2R, 0x4321);
 
     // Number of sync messages received before sending DELAY_REQ
-    MODIFY_REG(eth->MACLMIR, ETH_MACLMIR_DRSYNCR_Msk, 0 << ETH_MACLMIR_DRSYNCR_Pos);
+    MODIFY_REG(ETH->MACLMIR, ETH_MACLMIR_DRSYNCR_Msk, 0 << ETH_MACLMIR_DRSYNCR_Pos);
 #endif
 
     // Enable timestamp interrupt
-    //SET_BIT(eth->MACIER, ETH_MACIER_TSIE);
+    //SET_BIT(ETH->MACIER, ETH_MACIER_TSIE);
 }
 
 
@@ -415,31 +414,31 @@ void ETH_PPS_init(void) {
     configure_pin(GPIOG, GPIO_PIN_8, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF11_ETH);
 
     // Exceeding target time (0 unless set) triggers PPS output
-    MODIFY_REG(eth->MACPPSCR, ETH_MACPPSCR_TRGTMODSEL0_Msk, 0x3 << ETH_MACPPSCR_TRGTMODSEL0_Pos);
+    MODIFY_REG(ETH->MACPPSCR, ETH_MACPPSCR_TRGTMODSEL0_Msk, 0x3 << ETH_MACPPSCR_TRGTMODSEL0_Pos);
     // Freq of PPS
-    MODIFY_REG(eth->MACPPSCR, ETH_MACPPSCR_PPSCTRL_Msk, 0xF << ETH_MACPPSCR_PPSCTRL_Pos);
+    MODIFY_REG(ETH->MACPPSCR, ETH_MACPPSCR_PPSCTRL_Msk, 0xF << ETH_MACPPSCR_PPSCTRL_Pos);
 }
 
 
 void ETH_update_PTP_TS_coarse(const int32_t offset_sec, const int32_t offset_nsec) {
     // Set coarse update mode
-    CLEAR_BIT(eth->MACTSCR, ETH_MACTSCR_TSCFUPDT);
-    WRITE_REG(eth->MACSTSUR, offset_sec);
-    WRITE_REG(eth->MACSTNUR, offset_nsec);
+    CLEAR_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
+    WRITE_REG(ETH->MACSTSUR, offset_sec);
+    WRITE_REG(ETH->MACSTNUR, offset_nsec);
     // Update and wait for completion
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSUPDT);
-    while (READ_BIT(eth->MACTSCR, ETH_MACTSCR_TSUPDT));
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT);
+    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT));
 }
 
 void ETH_update_PTP_drift_comp(const int32_t comp) {
     // Set fine update mode
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSCFUPDT);
-    WRITE_REG(eth->MACTSAR, comp);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
+    WRITE_REG(ETH->MACTSAR, comp);
 
-    volatile uint32_t z = READ_REG(eth->MACTSAR); // BOZO
+    volatile uint32_t z = READ_REG(ETH->MACTSAR); // BOZO
     // Update and wait for completion
-    SET_BIT(eth->MACTSCR, ETH_MACTSCR_TSADDREG);
-    while (READ_BIT(eth->MACTSCR, ETH_MACTSCR_TSADDREG));
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG);
+    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));
 }
 
 
@@ -454,7 +453,7 @@ void ETH_send_timestamp_frame(uint8_t *data, uint16_t length) {
     // Update current TX descriptor idx
     current_tx_desc_idx = (current_tx_desc_idx + 1) % TX_DSC_CNT;
     // Update TX descriptor tail pointer;
-    WRITE_REG(eth->DMACTDTPR, (uint32_t)&dma_tx_desc[current_tx_desc_idx]);
+    WRITE_REG(ETH->DMACTDTPR, (uint32_t)&dma_tx_desc[current_tx_desc_idx]);
 
     ETH_send_frame(data, length);
 }

@@ -15,45 +15,6 @@ static char strbuf[MAX_SENTENCE_LEN];
 static gps_data_t gps_data;
 
 
-static float atofloat(const char *str) {
-    int sign = 1;
-    float fraction = 0.0;
-    float divisor = 1.0;
-    float value = 0.0;
-
-    if (*str == '-') {
-        sign = -1;
-        str++;
-    }
-    while (*str >= '0' && *str <= '9') {
-        value = value * 10.0 + (*str - '0');
-        str++;
-    }
-    if (*str == '.') {
-        str++;
-        while (*str >= '0' && *str <= '9') {
-            fraction = fraction * 10.0 + (*str - '0');
-            divisor *= 10.0;
-            str++;
-        }
-        value += fraction / divisor;
-    }
-
-    return sign * value;
-}
-
-// Convert NMEA ddmm.mmmm -> decimal degrees (float)
-static float nmea_to_float(const char *nmea, char hemisphere) {
-    if (*nmea == '\0')
-        return 0.0f;
-    float val = strtof(nmea, NULL);
-    int degrees = (int)(val / 100.0f);
-    float minutes = val - (float)(degrees * 100);
-    float decimal = (float)degrees + minutes / 60.0f;
-    if (hemisphere == 'S' || hemisphere == 'W') decimal *= -1.0f;
-    return decimal;
-}
-
 // Split NMEA sentence into fields
 static int split_fields(const char *sentence, char *fields[], int max_fields) {
     int count = 0;
@@ -67,23 +28,11 @@ static int split_fields(const char *sentence, char *fields[], int max_fields) {
 
 static void parse_GPRMC(char *fields[], int field_cnt) {
     if (field_cnt < 10) return;
-    strncpy(gps_data.utc_time, fields[1], sizeof(gps_data.utc_time));
     gps_data.fix_valid = (fields[2][0] == 'A'); // A=valid, V=invalid
-    gps_data.latitude  = nmea_to_float(fields[3], fields[4][0]);
-    gps_data.longitude = nmea_to_float(fields[5], fields[6][0]);
-
+    strncpy(gps_data.utc_time, fields[1], sizeof(gps_data.utc_time));
     strncpy(gps_data.date, fields[9], sizeof(gps_data.date));
 }
 
-static void parse_GPGGA(char *fields[], int field_cnt) {
-    if (field_cnt < 10) return;
-    strncpy(gps_data.utc_time, fields[1], sizeof(gps_data.utc_time));
-    gps_data.latitude  = nmea_to_float(fields[2], fields[3][0]);
-    gps_data.longitude = nmea_to_float(fields[4], fields[5][0]);
-    gps_data.fix_quality = atoi(fields[6]);
-    gps_data.num_satellites = atoi(fields[7]);
-    gps_data.hdop = atofloat(fields[8]);
-}
 
 void parse_nmea_sentence(const char *sentence) {
     if (sentence[0] != '$') return;
@@ -94,10 +43,10 @@ void parse_nmea_sentence(const char *sentence) {
     // Recommended Minimum Navigation Information
     if (strncmp(fields[0], "$GPRMC", 6) == 0)
         parse_GPRMC(fields, field_cnt);
-    // Global Positioning System Fix Data
+    /* // Global Positioning System Fix Data
     else if (strncmp(fields[0], "$GPGGA", 6) == 0)
         parse_GPGGA(fields, field_cnt);
-    /* // GPS DOP and active satellites
+    // GPS DOP and active satellites
     else if (strncmp(fields[0], "$GPGSA", 6) == 0)
         parse_GPGSA(fields, field_cnt);
     // Satellites in view
@@ -115,36 +64,12 @@ void process_gps(void) {
         uart_empty = uart_in_string_nonblocking(strbuf, MAX_SENTENCE_LEN);
         parse_nmea_sentence(strbuf);
     } while (!uart_empty);
-
-    if (gps_data.fix_valid != 0) {
-        enable_LED(GREEN_LED);
-
-        uint8_t dst_mac[6] = {0x00,0x00,0xba,0x90,0x38,0xb5};
-        uint8_t *buffer = ETH_get_tx_buffer();
-        if (buffer == NULL)
-            return;
-        uint16_t length = 0;
-        length += build_udp_header(buffer, 5555, 5555, (uint8_t *)&gps_data, sizeof(gps_data_t));
-        length += build_ipv4_header(buffer - length, pack4byte(IPv4_ADDR), 0x0A000458, length, PROTO_UDP, 1);
-        length += ETH_build_header(buffer - length, dst_mac, ETHERTYPE_IPv4);
-        ETH_send_frame(buffer - length, length);
-    } else {
-        disable_LED(GREEN_LED);
-    }
-}
-
-float gps_get_lat(void) {
-    return gps_data.latitude;
-}
-
-float gps_get_long(void) {
-    return gps_data.longitude;
 }
 
 void gps_init(void) {
     // configure gpio
     configure_pin(GPIOD, GPIO_PIN_7, GPIO_MODE_IT_RISING, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, 0); // PPS
-    configure_pin(GPIOD, GPIO_PIN_6, GPIO_MODE_AF_PP, GPIO_PULLUP, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // RX
+    configure_pin(GPIOD, GPIO_PIN_6, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // RX
     configure_pin(GPIOD, GPIO_PIN_5, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // TX
     configure_pin(GPIOD, GPIO_PIN_4, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // GND
     configure_pin(GPIOD, GPIO_PIN_3, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // VCC
@@ -163,18 +88,27 @@ void gps_init(void) {
     NVIC_EnableIRQ(EXTI7_IRQn);
 }
 
+
+// TODO: capture time at interrupt and calculate adjustment 
 void EXTI7_IRQHandler(void) {
-    // set frac bits here
+    CLEAR_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
+    // set time frac bits to zero
+    WRITE_REG(ETH->MACSTNUR, 0);
+    // Update and wait for completion
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT);
+    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT));
 
-    
-    // if valid gps data, toggle green, else set yellow
+    process_gps();
 
-    // parse gps and update time
+    if (gps_data.fix_valid) {
+        //WRITE_REG(ETH->MACSTSUR, offset_sec);
+        toggle_LED(GREEN_LED);
+        disable_LED(YELLOW_LED);
+    } else {
+        disable_LED(GREEN_LED);
+        enable_LED(YELLOW_LED);
+    }
 
-    // TODO disable yellow when the gps says it's locked
-    disable_LED(YELLOW_LED);
-
-
-    toggle_LED(GREEN_LED);
+    // ack interrupt
     SET_BIT(EXTI->RPR1, 0x1 << 7);
 }
