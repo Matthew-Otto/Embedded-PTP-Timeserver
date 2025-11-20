@@ -53,7 +53,7 @@ void process_ptp_message(uint8_t *buffer) {
         // Set coarse correction
         if (abs(offset_sec) > 2) {
             ETH_update_PTP_TS_coarse(offset_sec, offset_nsec);
-            TIME_update(offset_nsec);
+            //TIME_update(offset_nsec);
         }
     
         // compensate for drift (very buggy, nonfunctional)

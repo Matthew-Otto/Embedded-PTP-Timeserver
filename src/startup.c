@@ -1,6 +1,8 @@
 #include <stdint.h>
 
 #include "mcu.h"
+#include "schedule.h"
+#include "heap.h"
 #include "clocks.h"
 #include "gpio.h"
 #include "ethernet.h"
@@ -31,22 +33,21 @@ void reset_handler(void) {
     uint32_t *dst = &_sdata;
     while (dst < &_edata) *dst++ = *src++;
 
-    // Zero initialize .bss
+    // zero initialize .bss
     dst = &_sbss;
     while (dst < &_ebss) *dst++ = 0;
 
-    // initialize system
+    // initialize HW
     init_sysclk();
     GPIO_init();
     ETH_init();
 
-    // enable interrupts
-    __enable_irq();
+    // init OS functions
+    heap_init();
 
     // jump to main
     main();
 }
-
 
 
 void hardfault_handler(void){

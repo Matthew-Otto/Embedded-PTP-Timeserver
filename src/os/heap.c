@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include "heap.h"
@@ -54,7 +55,7 @@ void *malloc(size_t size){
             block_size <<= 1;
             i = (i-1) / 2; // traverse up
 
-        } else if (heap_tree[left] != NULL && heap_tree[left] != BRANCH_NODE || left == skip) { // left is a leaf or has been visited
+        } else if ((heap_tree[left] != NULL && heap_tree[left] != BRANCH_NODE) || (left == skip)) { // left is a leaf or has been visited
             if (heap_tree[right] != NULL && heap_tree[right] != BRANCH_NODE) { // right is a leaf
                 if (i == 0)
                 break;

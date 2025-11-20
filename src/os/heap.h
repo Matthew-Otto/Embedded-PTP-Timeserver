@@ -1,6 +1,7 @@
 #ifndef HEAP_H
 #define HEAP_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define HEAP_ADDR_LEN 17

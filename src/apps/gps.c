@@ -61,7 +61,7 @@ void parse_nmea_sentence(const char *sentence) {
 void process_gps(void) {
     int uart_empty;
     do {
-        uart_empty = uart_in_string_nonblocking(strbuf, MAX_SENTENCE_LEN);
+        uart_empty = uart_in_string_nonblocking(2, strbuf, MAX_SENTENCE_LEN);
         parse_nmea_sentence(strbuf);
     } while (!uart_empty);
 }
@@ -75,7 +75,7 @@ void gps_init(void) {
     configure_pin(GPIOD, GPIO_PIN_3, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // VCC
 
     // configure uart
-    init_uart(2, 9600);
+    init_uart(2, 9600, 256, 5);
     
     // power on gps via gpio pins
     GPIOD->BSRR = (uint32_t)GPIO_PIN_4 << 16; // set gps gnd pin low
