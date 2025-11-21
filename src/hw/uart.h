@@ -15,6 +15,7 @@ void init_uart(uint8_t uart_idx, int32_t baudrate, uint16_t fifo_size, uint8_t i
 void uart_in_string(uint8_t uart_idx, char *buff, uint32_t buff_size);
 int uart_in_string_nonblocking(uint8_t uart_idx, char *buff, uint32_t buff_size);
 void uart_out_string(uint8_t uart_idx, char *buff);
+void uart_out_char(uint8_t uart_idx, uint8_t data);
 
 void USART1_IRQHandler(void);
 void USART2_IRQHandler(void);

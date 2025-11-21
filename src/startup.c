@@ -2,8 +2,9 @@
 
 #include "mcu.h"
 #include "schedule.h"
-#include "heap.h"
 #include "clocks.h"
+#include "timer.h"
+#include "heap.h"
 #include "gpio.h"
 #include "ethernet.h"
 
@@ -39,6 +40,7 @@ void reset_handler(void) {
 
     // initialize HW
     init_sysclk();
+    init_timer();
     GPIO_init();
     ETH_init();
 

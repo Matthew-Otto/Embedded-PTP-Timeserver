@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "mcu.h"
 #include "schedule.h"
+#include "interpreter.h"
 #include "gpio.h"
 #include "gps.h"
 #include "ntp.h"
@@ -9,12 +10,18 @@
 //// TODO
 periodically poll PHY for linkup/linkdown
 reconfigure MAC when new link autonegotiate finishes
+
+re-write semaphores
+update fifos to be thread safe
 */
 
 void toggle1(void) {
     while (1) {
-        GPIOC->BSRR = GPIO_PIN_8;
-        GPIOC->BRR = GPIO_PIN_8;
+        sleep(100);
+        for (int i = 0; i < 1000; i++) {
+            GPIOC->BSRR = GPIO_PIN_8;
+            GPIOC->BRR = GPIO_PIN_8;
+        }
     }
 }
 void toggle2(void) {
@@ -46,6 +53,7 @@ int main(void) {
     //gps_init();   
     //ntp_process();
 
+    add_thread(interpreter, 128, 4);
     add_thread(toggle1, 128, 1);
     add_thread(toggle2, 128, 1);
     add_thread(toggle3, 128, 1);

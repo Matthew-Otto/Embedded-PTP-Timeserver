@@ -2,6 +2,7 @@
 #include "mcu.h"
 #include "schedule.h"
 #include "heap.h"
+#include "timer.h"
 
 TCB_t *RunPt;
 TCB_t *NextRunPt;
@@ -133,18 +134,15 @@ uint32_t add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
     return 0;
 }
 
-// TODO BOZO add a dedicated timer for handling sleep
-
 // sleeps thread for <sleep_time> ms
 void sleep(uint32_t sleep_time) {
-    /* if (sleep_time == 0) return;
+    if (sleep_time == 0) return;
     uint32_t primask = start_critical();
 
-    uint8_t cpu = proc_id();
-    TCB_t *thread = &RunPt;
+    TCB_t *thread = RunPt;
     
     // calculate when this thread should be re-queued
-    thread->resume_tick = get_raw_time() + (sleep_time * 1000);
+    thread->resume_tick = get_raw_time_ms() + sleep_time;
 
     // remove RunPt from thread pool
     dequeue_thread(thread);
@@ -166,46 +164,41 @@ void sleep(uint32_t sleep_time) {
             // find where the new sleeping thread belongs
             TCB_t *node = SleepScheduleRoot;
             while (1) {
-            if (node->next_tcb == NULL) {
-                node->next_tcb = thread;
-                break;
-            } else if (thread->resume_tick < node->next_tcb->resume_tick) {
-                thread->next_tcb = node->next_tcb;
-                node->next_tcb = thread;
-                break;
-            }
-            node = node->next_tcb;
+                if (node->next_tcb == NULL) {
+                    node->next_tcb = thread;
+                    break;
+                } else if (thread->resume_tick < node->next_tcb->resume_tick) {
+                    thread->next_tcb = node->next_tcb;
+                    node->next_tcb = thread;
+                    break;
+                }
+                node = node->next_tcb;
             }
         }
     }
 
     end_critical(primask);
 
-    schedule(); */
+    schedule();
 }
 
 // unsleeps the first thread in the sleep queue
 void unsleep(void) {
-    /* if (SleepScheduleRoot == NULL) return; // this shouldn't happen, but just in case
+    if (SleepScheduleRoot == NULL) return; // this shouldn't happen, but just in case
     uint32_t primask = start_critical();
 
     TCB_t *resumed_thread = SleepScheduleRoot;
     SleepScheduleRoot = SleepScheduleRoot->next_tcb;
 
-    // arm timer for next thread
-    if (SleepScheduleRoot != NULL) {
-        // hack to avoid missing threads that will resume soon
-        if (SleepScheduleRoot->resume_tick < (get_raw_time() + 10)) {
-            arm_timer(SLEEP, get_raw_time() + 10);
-        } else {
-            arm_timer(SLEEP, SleepScheduleRoot->resume_tick);
-        }
-    }
-
     // insert unslept thread into the front of the queue
     enqueue_thread(resumed_thread);
 
-    end_critical(primask); */
+    // arm timer for next thread
+    if (SleepScheduleRoot != NULL) {
+        arm_timer(SLEEP, SleepScheduleRoot->resume_tick);
+    }
+
+    end_critical(primask);
 }
 
 void enqueue_thread(TCB_t *thread) {
@@ -266,10 +259,12 @@ __attribute__((naked)) void pendSV_handler(void) {
     __asm ("MOV    SP, R3");
     // restore context
     __asm ("POP    {R4-R11}");
-    __asm ("CPSIE I");       // enable interrupts
-    __asm ("BX LR");         // branch to new task
-    // LR hold a magic value
+    // enable interrupts
+    __asm ("CPSIE I");
+    // branch to new task
+    // LR holds a magic value
     // r0–r3, r12, lr, pc, xpsr are restored automatically in hardware
+    __asm ("BX LR");
 }
 
 void systick_handler(void) {
