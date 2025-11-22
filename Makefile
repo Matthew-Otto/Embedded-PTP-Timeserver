@@ -28,7 +28,7 @@ INC = -I$(SRC_DIR)/inc -I$(SRC_DIR)/hw -I$(SRC_DIR)/os -I$(SRC_DIR)/network -I$(
 ASFLAGS = $(MCU) $(OPT)
 CFLAGS = $(MCU) -specs=nano.specs $(OPT) $(INC) -Wall -fdata-sections -ffunction-sections -MMD -MP
 LDFLAGS = $(MCU) -T$(LDSCRIPT) $(LIBS) -Wl,-Map=$(BIN_DIR)main.map,--cref -Wl,--gc-sections -Wl,--print-memory-usage
-
+LDFLAGS += -Wl,--wrap=malloc -Wl,--wrap=free -Wl,--wrap=_malloc_r -Wl,--wrap=_free_r
 
 ifeq ($(DEBUG), 1)
 CFLAGS += -g -gdwarf-2

@@ -3,12 +3,12 @@
 #include <stdint.h>
 #include "uart.h"  // optional, for printf redirection
 
-// Provide heap boundaries (linker script must define _end or _heap_start/_heap_end)
-extern uint8_t _end;  // symbol from linker script
-static uint8_t *heap_end;
-
-int _write(int file, char *ptr, int len) {
-    return 0;
+int _write(int fd, const void *buf, int len) {
+    const char *data = buf;
+    for (int i = 0; i < len; i++) {
+        uart_out_char(3, data[i]);
+    }
+    return len;
 }
 
 int _read(int file, char *ptr, int len) {
@@ -44,5 +44,5 @@ int _getpid(void) {
 }
 
 void _exit(int status) {
-    return;
+    while (1);
 }

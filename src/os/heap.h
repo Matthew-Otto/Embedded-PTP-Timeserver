@@ -52,4 +52,9 @@ void free(void *ptr);
 // returns various heap statistics
 void heap_stats(heap_stats_t *stats);
 
+void *__wrap_malloc(size_t size);
+void *__wrap__malloc_r(struct _reent *r, size_t size);
+void __wrap_free(void *ptr);
+void __wrap__free_r(struct _reent *r, void *ptr);
+
 #endif // HEAP_H

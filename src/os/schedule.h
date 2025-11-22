@@ -1,27 +1,32 @@
 #ifndef SCHEDULE_H
 #define SCHEDULE_H
 
+#include "mcu.h"
+#include "stdbool.h"
+#include "semaphore.h"
+
 typedef enum {RUNNING, ACTIVE, SLEEPING, BLOCKED, DEAD, IDLE} ThreadState;
 
+typedef struct semaphore semaphore_t;
 typedef struct TCB TCB_t;
 struct TCB {
-    uint8_t *sp;
+    uint32_t *sp;
     TCB_t *next_tcb;
     TCB_t *prev_tcb;
     uint8_t id;
     ThreadState state;
     uint32_t resume_tick;
     uint8_t priority;
-    uint8_t *stack;
+    uint32_t *stack;
 };
 
 
 static inline void disable_interrupts(void){
-    __asm ("CPSID I");
+    __asm ("CPSID I" ::: "memory");
 }
 
 static inline void enable_interrupts(void){
-    __asm ("CPSIE I");
+    __asm ("CPSIE I" ::: "memory");
 }
 
 // saves current interrupt status before disabling
@@ -47,8 +52,10 @@ static inline void wait_for_interrupt(void){
 
 void schedule(void);
 void init_scheduler(uint32_t timeslice);
-uint32_t add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority);
+int add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority);
 
+void sched_block(semaphore_t *sem);
+bool sched_unblock(semaphore_t *sem);
 void sleep(uint32_t sleep_time);
 void unsleep(void);
 void enqueue_thread(TCB_t *thread);
@@ -57,5 +64,6 @@ void suspend(void);
 
 void pendSV_handler(void);
 void systick_handler(void);
+void SVC_handler(void);
 
 #endif // SCHEDULE_H

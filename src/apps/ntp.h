@@ -38,5 +38,6 @@ typedef struct {
 
 void receive_ntp_req(ntp_packet_t*, udp_header_t*, ipv4_header_t*, eth_header_t*);
 void ntp_process(void);
+void get_time(uint32_t *sec, uint32_t *frac);
 
 #endif // NTP_H

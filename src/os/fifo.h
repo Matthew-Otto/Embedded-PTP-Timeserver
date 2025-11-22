@@ -2,8 +2,11 @@
 #define FIFO_H
 
 #include <stdint.h>
+#include "semaphore.h"
 
 typedef struct {
+    semaphore_t full;
+    semaphore_t empty;
     uint32_t head;
     uint32_t tail;
     uint32_t size;
@@ -11,9 +14,8 @@ typedef struct {
 } FIFO8_t;
 
 FIFO8_t* fifo8_init(uint32_t size);
-int fifo8_put(FIFO8_t *fifo, uint8_t data);
-int fifo8_get(FIFO8_t *fifo, uint8_t *data);
-int fifo8_get_blocking(FIFO8_t *fifo, uint8_t *data);
-uint8_t fifo8_size(FIFO8_t *fifo);
+void fifo8_put(FIFO8_t *fifo, uint8_t data);
+void fifo8_get(FIFO8_t *fifo, uint8_t *data);
+uint16_t fifo8_size(FIFO8_t *fifo);
 
 #endif // FIFO_H

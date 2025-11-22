@@ -13,6 +13,7 @@ enum LED_COLOR{
 void GPIO_init();
 void GPIO_clk_en(char);
 void configure_pin(GPIO_TypeDef *GPIO_bank, uint16_t pin, uint32_t mode, uint32_t pupd, uint32_t ospeed, uint8_t alternate);
+void toggle_GPIO(GPIO_TypeDef *GPIO_bank, uint16_t pin);
 
 void toggle_LED(enum LED_COLOR color);
 void enable_LED(enum LED_COLOR color);

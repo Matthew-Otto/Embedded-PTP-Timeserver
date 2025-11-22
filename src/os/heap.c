@@ -196,3 +196,16 @@ static int32_t find_ptr(void *ptr) {
     }
     return i;
 }
+
+void *__wrap_malloc(size_t size) {
+    return malloc(size);
+}
+void *__wrap__malloc_r(struct _reent *r, size_t size) {
+    return malloc(size);
+}
+void __wrap_free(void *ptr) {
+    free(ptr);
+}
+void __wrap__free_r(struct _reent *r, void *ptr) {
+    free(ptr);
+}

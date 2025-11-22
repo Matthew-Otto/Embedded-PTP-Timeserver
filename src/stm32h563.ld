@@ -9,8 +9,11 @@ MEMORY
     SRAM (rwx) : ORIGIN = 0x20000000, LENGTH = 640K
 }
 
-/* Define stack top (end of SRAM) */
-_estack = ORIGIN(SRAM) + LENGTH(SRAM);
+/* Configure Stack */
+_estack = ORIGIN(SRAM) + LENGTH(SRAM); /* top of SRAM */
+_stack_size = 32K;
+_stack_top = _estack;
+_stack_bottom = _estack - _stack_size;
 
 SECTIONS
 {
@@ -45,10 +48,6 @@ SECTIONS
         _ebss = .;
     } > SRAM
 
-    .heap (NOLOAD) : ALIGN(4) {
-        KEEP(*(.heap))
-    } > SRAM
-
     .eth_rx_buffer (NOLOAD) : ALIGN(4) {
         KEEP(*(.eth_rx_buffer))
     } > SRAM
@@ -57,8 +56,9 @@ SECTIONS
         KEEP(*(.eth_rx_buffer))
     } > SRAM
 
+    .heap (NOLOAD) : ALIGN(4) {
+        KEEP(*(.heap))
+    } > SRAM
 
-    .stack (COPY) : {
-        __stack_top = ORIGIN(SRAM) + LENGTH(SRAM) - 4;
-    }
+    _end = .;
 }

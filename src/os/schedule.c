@@ -1,8 +1,13 @@
 #include <stdlib.h>
+#include <stdbool.h>
 #include "mcu.h"
+#include "watchdog.h"
 #include "schedule.h"
+#include "semaphore.h"
 #include "heap.h"
 #include "timer.h"
+
+#include "gpio.h" // BOZO
 
 TCB_t *RunPt;
 TCB_t *NextRunPt;
@@ -60,21 +65,7 @@ void init_scheduler(uint32_t timeslice /* timeslice in ms */) {
     SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
 
     // initialize idle task
-    TCB_t *idle_tcb = (TCB_t *)malloc(sizeof(TCB_t));
-    if (idle_tcb == NULL) return;
-    uint8_t *stack = (uint8_t *)malloc(128);
-    if (stack == NULL) return;
-    idle_tcb->id = 0;
-    idle_tcb->priority = IDLE_PRIORITY;
-    idle_tcb->state = IDLE;
-    idle_tcb->stack = stack;
-    // initialize idle thread stack
-    //*(uint32_t *)&stack[128-4] = 0x01000000;        // PSR
-    *(uint32_t *)&stack[128-8] = (uint32_t)suspend; // PC (function pointer)
-    *(uint32_t *)stack = 0xDEADBEEF;                // magic value for stack overflow detection
-    idle_tcb->sp = &stack[128-64];                  // set thread SP
-    IdleThread = idle_tcb;
-    ActivePriorityCount[IDLE_PRIORITY] = 1;
+    add_thread(suspend, 32, IDLE_PRIORITY);
 
     // launch first thread
     uint8_t pri = 0;
@@ -90,30 +81,31 @@ void init_scheduler(uint32_t timeslice /* timeslice in ms */) {
         ActivePriorityCount[pri]--;
     }
 
-    // launch first task
-    __asm ("LDR     SP, [%0]":: "r" (RunPt)); // Load @ RunPt to get SP
-    __asm ("ADD     SP, SP, #56"); // Advance stack pointer to PC
-    __asm ("POP     {LR}");        // load initial function pointer into LR from stack
-    __asm ("CPSIE   I");           // enable interrupts
-    __asm ("BX      LR");          // branch to first thread
+    // Execute SVC 0 to launch first task
+    __enable_irq();
+    __asm("SVC #0");
 }
 
 // add new thread to schedule
-uint32_t add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
+int add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
     uint32_t primask = start_critical();
 
-    if (priority >= PRIORITY_LVL_CNT) return 1;
+    static bool idle_init = 0;
+
+    if (priority > IDLE_PRIORITY) return -1;
+    if (priority == IDLE_PRIORITY && idle_init) return -1;
+    idle_init = 1;
 
     TCB_t *newtcb = (TCB_t *)malloc(sizeof(TCB_t));
     if (newtcb == NULL) {
         end_critical(primask);
-        return 1;
+        return -1;
     }
-    uint8_t *stack = (uint8_t *)malloc(stack_size);
+    uint32_t *stack = (uint32_t *)malloc(stack_size << 2);
     if (stack == NULL) {
         free(newtcb);
         end_critical(primask);
-        return 1;
+        return -1;
     }
 
     LifetimeThreadCount++;
@@ -121,17 +113,98 @@ uint32_t add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
     newtcb->priority = priority;
     newtcb->stack = stack;
 
+    *stack = 0xDEADBEEF;  // magic value for stack overflow detection
+    uint32_t *sp = stack + stack_size; // stack pointer starts at top of stack
+
     // initialize thread stack
-    *(uint32_t *)&stack[stack_size-4] = 0x01000000;     // PSR
-    *(uint32_t *)&stack[stack_size-8] = (uint32_t)task; // PC (function pointer)
-    *(uint32_t *)stack = 0xDEADBEEF;                    // magic value for stack overflow detection
-    newtcb->sp = &stack[stack_size-64];                 // set thread SP
+    *(--sp) = xPSR_T_Msk;     // Set Thumb bit
+    *(--sp) = (uint32_t)task; // PC (function pointer)
+    *(--sp) = 0xFFFFFFBC;            // LR
+    *(--sp) = 0xCCCCCCCC; // R12
+    *(--sp) = 0x33333333; // R3
+    *(--sp) = 0x22222222; // R2
+    *(--sp) = 0x11111111; // R1
+    *(--sp) = 0x00000000; // R0
+    *(--sp) = 0xBBBBBBBB; // R11
+    *(--sp) = 0xAAAAAAAA; // R10
+    *(--sp) = 0x99999999; // R9
+    *(--sp) = 0x88888888; // R8
+    *(--sp) = 0x77777777; // R7
+    *(--sp) = 0x66666666; // R6
+    *(--sp) = 0x55555555; // R5
+    *(--sp) = 0x44444444; // R4
+    newtcb->sp = sp;      // set thread SP
 
     // add thread to schedule
     enqueue_thread(newtcb);
 
     end_critical(primask);
     return 0;
+}
+
+// remove thread from schedule
+void sched_block(semaphore_t *sem) {
+    volatile uint32_t primask = start_critical();
+
+    // BOZO
+    toggle_GPIO(GPIOC, GPIO_PIN_8);
+
+    TCB_t *thread = RunPt;
+    
+    // remove RunPt from thread pool
+    dequeue_thread(thread);
+    // set thread state to blocked
+    thread->state = BLOCKED;
+
+    // add thread to semaphore
+    if (sem->bthreads_root == NULL) {
+        sem->bthreads_root = thread;
+    } else {
+        // insert tcb into blocked list based on priority
+        TCB_t *blocked_node = sem->bthreads_root;
+        if (thread->priority < blocked_node->priority) {
+            // insert into front of list
+            thread->next_tcb = blocked_node;
+            sem->bthreads_root = thread;
+        } else {
+            while (1) {
+                if (blocked_node->next_tcb == NULL) {
+                    blocked_node->next_tcb = thread;
+                    break;
+                } else if (thread->priority < blocked_node->next_tcb->priority) {
+                    thread->next_tcb = blocked_node->next_tcb;
+                    blocked_node->next_tcb = thread;
+                    break;
+                }
+                blocked_node = blocked_node->next_tcb;
+            }
+        }
+    }
+
+    schedule();
+    end_critical(primask);
+}
+
+// insert thread back into schedule
+bool sched_unblock(semaphore_t *sem) {
+    uint32_t primask = start_critical();
+
+    // BOZO
+    toggle_GPIO(GPIOC, GPIO_PIN_9);
+
+    TCB_t *thread = sem->bthreads_root;
+
+    // update semaphore blocked list
+    sem->bthreads_root = sem->bthreads_root->next_tcb;
+
+    // insert unblocked thread into beginning of active list
+    enqueue_thread(thread);
+
+    end_critical(primask);
+
+    // determine if this unblocked thread was higher priority 
+    // than the thread that signaled it
+    return (thread->priority >= RunPt->priority);
 }
 
 // sleeps thread for <sleep_time> ms
@@ -234,39 +307,51 @@ void dequeue_thread(TCB_t *thread) {
     thread->next_tcb = NULL;
 }
 
-// schedule next thread
-// simple alias for schedule()
-void suspend(void) __attribute__((alias("schedule")));
+void suspend(void) {
+    __WFI();
+}
 
 // perform context switch
 __attribute__((naked)) void pendSV_handler(void) {
-    // disable interrupts
-    __asm ("CPSID  I");
     // save context
-    __asm ("PUSH   {R4-R11}"); 
+    __asm ("MRS    R0, PSP");
+    __asm ("STMDB  R0!, {R4-R11}");
     // get address of run pointer
-    __asm ("LDR    R0, =RunPt");
-    __asm ("LDR    R1, [R0]");
-    //save old stack pointer
-    __asm ("MOV    R2, SP");
-    __asm ("STR    R2, [R1]");
+    __asm ("LDR    R3, =RunPt");
+    __asm ("LDR    R1, [R3]");
+    // save old stack pointer
+    __asm ("STR    R0, [R1]");
     // update RunPt with NextRunPt
     __asm ("LDR    R2, =NextRunPt");   // get address of next run pointer
     __asm ("LDR    R1, [R2]");
-    __asm ("STR    R1, [R0]");
+    __asm ("STR    R1, [R3]");
+    // load new stack pointer and restore context
+    __asm ("LDR    R0, [R1]");
+    __asm ("LDMIA  R0!, {R4-R11}");
     // load new SP
-    __asm ("LDR    R3, [R1]");
-    __asm ("MOV    SP, R3");
-    // restore context
-    __asm ("POP    {R4-R11}");
-    // enable interrupts
-    __asm ("CPSIE I");
+    __asm ("MSR    PSP, R0");
     // branch to new task
-    // LR holds a magic value
+    // LR holds a magic value (0xffffffbc)
     // r0–r3, r12, lr, pc, xpsr are restored automatically in hardware
     __asm ("BX LR");
 }
 
 void systick_handler(void) {
+    toggle_GPIO(GPIOD, GPIO_PIN_2); // BOZO
+    kick_watchdog();
     schedule();
+}
+
+// launch first task
+__attribute__((naked)) void SVC_handler(void)
+{
+    __asm ("LDR    R0, =RunPt");     // load address of *RunPt
+    __asm ("LDR    R1, [R0]");       // load *RunPt
+    __asm ("LDR    R2, [R1]");       // dereference *RunPt (get stack pointer
+    __asm ("ADD    R2, R2, #32");    // advance stack pointer to location of R0
+    __asm ("MSR    PSP, R2");        // set PSP to task stack pointer
+    __asm ("ISB"); // flush pipeline
+    // TODO reclaim MSP stack space
+    __asm ("MOV    LR, 0xFFFFFFBC"); // Unstack from PSP
+    __asm ("BX     LR");             // return from 'exception'
 }

@@ -8,41 +8,34 @@ FIFO8_t *fifo8_init(uint32_t size) {
     FIFO8_t *fifo = (FIFO8_t*)malloc(fifo_size);
     if (fifo == NULL) return NULL;
 
+    init_semaphore(&fifo->full, fifo_size);
+    init_semaphore(&fifo->empty, 0);
+
     fifo->head = 0;
     fifo->tail = 0;
     fifo->size = size;
     return fifo;
 }
 
-int fifo8_put(FIFO8_t *fifo, uint8_t data) {
-    if ((fifo->tail + 1) % fifo->size == fifo->head) {
-        return -1; // FIFO full
-    }
+void fifo8_put(FIFO8_t *fifo, uint8_t data) {
+    c_wait(&fifo->full);
+
     fifo->data[fifo->tail] = data;
     fifo->tail = (fifo->tail + 1) % fifo->size;
-    return 0;
+    
+    c_signal(&fifo->empty);
 }
 
-int fifo8_get(FIFO8_t *fifo, uint8_t *data) {
-    if (fifo->head == fifo->tail) // empty
-        return -1; 
+void fifo8_get(FIFO8_t *fifo, uint8_t *data) {
+    c_wait(&fifo->empty);
 
     *data = fifo->data[fifo->head];
     fifo->head = (fifo->head + 1) % fifo->size;
 
-    return 0;
+    c_signal(&fifo->full);
 }
 
-int fifo8_get_blocking(FIFO8_t *fifo, uint8_t *data) {
-    while (fifo->head == fifo->tail); // empty
-
-    *data = fifo->data[fifo->head];
-    fifo->head = (fifo->head + 1) % fifo->size;
-
-    return 0;
-}
-
-uint8_t fifo8_size(FIFO8_t *fifo) {
+uint16_t fifo8_size(FIFO8_t *fifo) {
     if (fifo->tail >= fifo->head)
         return fifo->tail - fifo->head;
     else

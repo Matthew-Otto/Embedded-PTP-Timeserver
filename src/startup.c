@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #include "mcu.h"
+#include "watchdog.h"
 #include "schedule.h"
 #include "clocks.h"
 #include "timer.h"
@@ -8,7 +9,8 @@
 #include "gpio.h"
 #include "ethernet.h"
 
-extern uint32_t __stack_top;
+extern uint32_t _stack_top;
+extern uint32_t _stack_bottom;
 extern uint32_t _sidata;
 extern uint32_t _sdata;
 extern uint32_t _edata;
@@ -38,8 +40,13 @@ void reset_handler(void) {
     dst = &_sbss;
     while (dst < &_ebss) *dst++ = 0;
 
+    // Write magic value to bottom of stack
+    uint32_t *stack_end = (uint32_t *)&_stack_bottom;
+    *stack_end = 0xDEADBEEF;
+
     // initialize HW
     init_sysclk();
+    init_watchdog();
     init_timer();
     GPIO_init();
     ETH_init();
@@ -55,8 +62,11 @@ void reset_handler(void) {
 void hardfault_handler(void){
     typedef enum {UNKNOWN, STACK_OVERFLOW, STACK_OOB} ERROR;
     volatile ERROR e = UNKNOWN;
-    uint32_t *stack_ptr;
-    uint32_t lr_value;
+    volatile uint32_t *stack_ptr;
+    volatile uint32_t stack_ptr_addr;
+    volatile uint32_t stack_top = (uint32_t)&_stack_top;
+    volatile uint32_t stack_bottom = (uint32_t)&_stack_bottom;
+    volatile uint32_t lr_value;
 
     /* Read active stack pointer and LR (EXC_RETURN) */
     __asm volatile(
@@ -81,13 +91,15 @@ void hardfault_handler(void){
     volatile uint32_t sp  = (uint32_t)stack_ptr;
     volatile uint32_t exc_return = lr_value;
 
-    // TODO programatically determine error that caused hardfault
-    //if (!(stack_pointer < 0x20000000 || stack_pointer > 0x20007FFF)) e = STACK_OOB;
+    // programatically determine error that caused hardfault
+    stack_ptr_addr = (uint32_t)stack_ptr;
+    if ((stack_ptr_addr < stack_bottom) || (stack_ptr_addr > stack_top)) e = STACK_OOB;
 
-    //if (*sp != 0xdeadbeef) e = STACK_OVERFLOW;
+    volatile uint32_t guard_val = *(uint32_t *)stack_bottom;
+    if (guard_val != 0xDEADBEEF) e = STACK_OVERFLOW;
 
     // hardware breakpoint
-    __asm volatile("BKPT #0");
+    //__asm volatile("BKPT #0");
     while (1);
 }
 
@@ -240,7 +252,7 @@ extern void LPTIM6_IRQHandler(void) __attribute__((weak, alias ("default_isr")))
 /* Vector table */
 __attribute__((section(".isr_vector")))
 void (* const vector_table[])(void) = {
-    ((void (*)(void))(&__stack_top)),
+    ((void (*)(void))(&_stack_top)),
     reset_handler,
     NMI_handler,
     hardfault_handler,

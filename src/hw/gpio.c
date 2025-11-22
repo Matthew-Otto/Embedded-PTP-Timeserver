@@ -49,6 +49,13 @@ void configure_pin(GPIO_TypeDef *GPIO_bank, uint16_t pin, uint32_t mode, uint32_
     }
 };
 
+void toggle_GPIO(GPIO_TypeDef *GPIO_bank, uint16_t pin) {
+    if (READ_BIT(GPIO_bank->ODR, pin))
+        GPIO_bank->BRR = pin;
+    else
+        GPIO_bank->BSRR = pin;
+}
+
 void enable_LED(enum LED_COLOR color) {
     switch (color) {
         case RED_LED:

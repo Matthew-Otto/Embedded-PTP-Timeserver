@@ -2,6 +2,8 @@
 #include "uart.h"
 #include "fifo.h"
 
+#include "gpio.h" // BOZO
+
 static uart_desc_t desc[5];
 
 void init_uart(uint8_t uart_idx, int32_t baudrate, uint16_t fifo_size, uint8_t int_pri) {
@@ -42,7 +44,7 @@ void init_uart(uint8_t uart_idx, int32_t baudrate, uint16_t fifo_size, uint8_t i
     desc[uart_idx].rx_fifo = fifo8_init(fifo_size);
 
     // enable interrupts
-    NVIC_SetPriority(uart_irq_num, 5);
+    NVIC_SetPriority(uart_irq_num, int_pri);
     NVIC_EnableIRQ(uart_irq_num);
 }
 
@@ -56,28 +58,29 @@ static inline void uart_interrupt_handler(uint8_t uart_idx, USART_TypeDef *uart)
 
     // while tx hw fifo not full
     while (READ_BIT(uart->ISR, USART_ISR_TXE_TXFNF)) {
-        if (fifo8_get(desc[uart_idx].tx_fifo, &data) == -1) {
-            // if sw fifo empty, disable hw fifo not full interrupt
+        // if sw fifo empty, disable hw fifo not full interrupt
+        if (!fifo8_size(desc[uart_idx].tx_fifo)) {
             CLEAR_BIT(uart->CR1, USART_CR1_TXFEIE);
             break;
         }
+
+        fifo8_get(desc[uart_idx].tx_fifo, &data);
         uart->TDR = data;
     }
 }
 
-
-
+// captures input characters until a newline character is received
 void uart_in_string(uint8_t uart_idx, char *buff, uint32_t buff_size) {
     uint32_t length = 0;
     uint8_t inchar;
     do {
-        fifo8_get_blocking(desc[uart_idx].rx_fifo, &inchar);
+        fifo8_get(desc[uart_idx].rx_fifo, &inchar);
         
         if (inchar == '\n')
             continue;
-        if (inchar == '\r') {
+        if (inchar == '\r')
             break;
-        } else if (length < buff_size) {
+        if (length < buff_size) {
             *buff++ = inchar;
             length++;
         }
@@ -89,16 +92,17 @@ int uart_in_string_nonblocking(uint8_t uart_idx, char *buff, uint32_t buff_size)
     uint32_t length = 0;
     uint8_t inchar;
     do {
-        if (fifo8_get(desc[uart_idx].rx_fifo, &inchar) < 0) {
+        if (!fifo8_size(desc[uart_idx].rx_fifo)) {
             *buff = '\0';
             return 1;
         }
+        fifo8_get(desc[uart_idx].rx_fifo, &inchar);
         
         if (inchar == '\n')
             continue;
-        if (inchar == '\r') {
+        if (inchar == '\r')
             break;
-        } else if (length < buff_size) {
+        if (length < buff_size) {
             *buff++ = inchar;
             length++;
         }
@@ -108,15 +112,52 @@ int uart_in_string_nonblocking(uint8_t uart_idx, char *buff, uint32_t buff_size)
     return 0;
 }
 
+// reflects received characters back out to the terminal
+void uart_in_string_reflect(uint8_t uart_idx, char *buff, uint32_t buff_size) {
+    uint32_t length = 0;
+    uint8_t inchar;
+    do {
+        fifo8_get(desc[uart_idx].rx_fifo, &inchar);
+        
+        if (inchar == 0x08 || inchar == 0x7F) {
+            if (length) {
+                buff--;
+                length--;
+                uart_out_char(uart_idx, 0x08);
+                uart_out_char(uart_idx, ' ');
+                uart_out_char(uart_idx, 0x08);
+            }
+            continue;
+        }
+        if (inchar == '\n') {
+            uart_out_char(uart_idx, '\n');
+            continue;
+        }
+        if (inchar == '\r') {
+            uart_out_char(uart_idx, '\r');
+            break;
+        }
+        if (length < buff_size) {
+            *buff++ = inchar;
+            length++;
+            uart_out_char(uart_idx, inchar);
+        }
+    } while (length < buff_size);
+    *buff = '\0';
+}
 
 void uart_out_char(uint8_t uart_idx, uint8_t data) {
+    toggle_GPIO(GPIOC, GPIO_PIN_12);  // BOZO
     // if tx_fifo is empty and hardware fifo is not full
     if (!fifo8_size(desc[uart_idx].tx_fifo) && (desc[uart_idx].uart->ISR & USART_ISR_TXE_TXFNF)) {
         //put directly into hardware TX buffer
+        volatile uint32_t x = (uint32_t)USART3;
+        volatile uint32_t y = (uint32_t)desc[uart_idx].uart;
+
         desc[uart_idx].uart->TDR = data;
     } else { 
         // put into software buffer (blocking)
-        while (fifo8_put(desc[uart_idx].tx_fifo, data) == -1);
+        fifo8_put(desc[uart_idx].tx_fifo, data);
         // enable hw fifo empty interrupt
         SET_BIT(desc[uart_idx].uart->CR1, USART_CR1_TXFEIE);
     }
