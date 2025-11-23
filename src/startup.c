@@ -46,7 +46,7 @@ void reset_handler(void) {
 
     // initialize HW
     init_sysclk();
-    //init_watchdog();
+    init_watchdog();
     init_timer();
     GPIO_init();
     ETH_init();
@@ -100,7 +100,7 @@ void hardfault_handler(void){
 
     // hardware breakpoint
     //__asm volatile("BKPT #0");
-    while (1);
+    while (1) __WFI();
 }
 
 void default_fault_isr(void) {

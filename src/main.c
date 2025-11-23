@@ -56,8 +56,8 @@ int main(void) {
     //ntp_process();
 
     add_thread(interpreter, 512, 1);
-    add_thread(toggle1, 512, 1);
-    add_thread(toggle2, 512, 1);
+    //add_thread(toggle1, 512, 1);
+    //add_thread(toggle2, 512, 1);
     //add_thread(toggle3, 512, 1);
     //add_thread(toggle4, 512, 1);
 

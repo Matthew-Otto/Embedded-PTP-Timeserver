@@ -18,14 +18,13 @@ TCB_t RunPtBlackHole = {.state=DEAD};
 #define IDLE_PRIORITY PRIORITY_LVL_CNT // alias
 static uint32_t LifetimeThreadCount = 0;
 static uint16_t ActivePriorityCount[PRIORITY_LVL_CNT+1] = {0}; // count the number of active threads in each priority level
-static TCB_t *ThreadSchedule[PRIORITY_LVL_CNT+1]; // tracks pointers to link-list of each priority schedule
+static TCB_t *ThreadSchedule[PRIORITY_LVL_CNT]; // tracks pointers to link-list of each priority schedule
 static TCB_t *SleepScheduleRoot = NULL;
 
 
 // schedule next task
 void schedule(void) {
     uint32_t primask = start_critical();
-    toggle_GPIO(GPIOG, GPIO_PIN_3); // BOZO
 
     // update current thread / put it back into schedule
     if (RunPt->state == RUNNING) {
@@ -82,7 +81,7 @@ void init_scheduler(uint32_t timeslice /* timeslice in ms */) {
         ActivePriorityCount[pri]--;
     }
 
-    // is this really necessary????
+    // configure systick and pendSV interrupt priorities
     NVIC_SetPriority(PendSV_IRQn, 15);
     NVIC_SetPriority(SysTick_IRQn, 14);
 
@@ -98,8 +97,10 @@ int add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
     static bool idle_init = 0;
 
     if (priority > IDLE_PRIORITY) return -1;
-    if (priority == IDLE_PRIORITY && idle_init) return -1;
-    idle_init = 1;
+    if (priority == IDLE_PRIORITY) {
+        if (idle_init) return -1;
+        idle_init = 1;
+    }
 
     TCB_t *newtcb = (TCB_t *)malloc(sizeof(TCB_t));
     if (newtcb == NULL) {
@@ -147,7 +148,13 @@ int add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
     newtcb->sp = sp;      // set thread SP
 
     // add thread to schedule
-    enqueue_thread(newtcb);
+    if (priority == IDLE_PRIORITY) {
+        newtcb->state = IDLE;
+        IdleThread = newtcb;
+        ActivePriorityCount[IDLE_PRIORITY] = 1;
+    } else {
+        enqueue_thread(newtcb);
+    }
 
     end_critical(primask);
     return 0;
@@ -161,16 +168,7 @@ void sched_block(semaphore_t *sem) {
     toggle_GPIO(GPIOC, GPIO_PIN_10);
 
     TCB_t *thread = RunPt;
-
-    // BOZO
-    if (thread->id == 0) {
-        __asm volatile("BKPT #0");
-    }
-    // BOZO
-    if (__get_IPSR()) {
-        __asm volatile("BKPT #0");
-    }
-    
+  
     // remove RunPt from thread pool
     dequeue_thread(thread);
     // set thread state to blocked
@@ -328,7 +326,7 @@ void dequeue_thread(TCB_t *thread) {
 }
 
 void suspend(void) {
-    __WFI();
+    while (1) __WFI();
 }
 
 // perform context switch

@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <string.h>
 #include "heap.h"
+#include "semaphore.h"
 
-// BOZO TODO add mutexes
 
 __attribute__((section(".heap")))
 static uint8_t heap[HEAP_SIZE];
@@ -11,13 +11,16 @@ static uint8_t* heap_ptr = heap;
 static void* heap_tree[HEAP_TREE_NODE_CNT] = {0};
 
 static int32_t find_ptr(void*);
+static semaphore_t heap_lock;
 
-void heap_init(void){
+void heap_init(void) {
+    init_semaphore(&heap_lock, 0);
     memset(heap_tree, 0, HEAP_TREE_NODE_CNT*sizeof(void*));
 }
 
-void *malloc(size_t size){
+void *malloc(size_t size) {
     if (size > HEAP_SIZE) return NULL;
+    b_wait(&heap_lock);
 
     // get size of block to allocate
     size = next_pow2(size);
@@ -42,6 +45,7 @@ void *malloc(size_t size){
             uint32_t offset = ((i+1) * block_size) & HEAP_ADDR_MAX;
             void *mem_addr = heap_ptr + offset;
             heap_tree[i] = mem_addr;
+            b_signal(&heap_lock);
             return mem_addr;
         } else {
             heap_tree[i] = BRANCH_NODE;
@@ -74,10 +78,11 @@ void *malloc(size_t size){
             i = left; // traverse down left
         }
     }
+    b_signal(&heap_lock);
     return NULL;
 }
 
-void *calloc(size_t elem_cnt, size_t elem_size){
+void *calloc(size_t elem_cnt, size_t elem_size) {
     size_t size = elem_cnt * elem_size;
     void *mem_ptr = malloc(size);
     if (mem_ptr == NULL) return NULL;
@@ -85,13 +90,15 @@ void *calloc(size_t elem_cnt, size_t elem_size){
     return mem_ptr;
 }
 
-void free(void *ptr){
+void free(void *ptr) {
     if (heap_tree[0] == NULL) 
         return; // no memory in heap is allocated
+    b_wait(&heap_lock);
 
     // recurse tree and find node
     int32_t i = find_ptr(ptr);
     if (!i) { // not found
+        b_signal(&heap_lock);
         return;
     }
 
@@ -108,9 +115,12 @@ void free(void *ptr){
         // else, free this node and traverse up the tree
         heap_tree[i] = NULL;
     }
+
+    b_signal(&heap_lock);
 }
 
-void heap_stats(heap_stats_t *stats){
+void heap_stats(heap_stats_t *stats) {
+    b_wait(&heap_lock);
     // calculate used
     int32_t used = 0;
     int16_t i = 0;
@@ -158,6 +168,8 @@ void heap_stats(heap_stats_t *stats){
     stats->size = HEAP_SIZE;
     stats->used = used;
     stats->free = HEAP_SIZE - used;
+    
+    b_signal(&heap_lock);
 }
 
 // used to recurse the binary tree that represents the heap
