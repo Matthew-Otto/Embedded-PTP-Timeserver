@@ -1,7 +1,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdint.h>
-#include "uart.h"  // optional, for printf redirection
+#include "uart.h"
 
 int _write(int fd, const void *buf, int len) {
     const char *data = buf;
@@ -9,6 +9,10 @@ int _write(int fd, const void *buf, int len) {
         uart_out_char(3, data[i]);
     }
     return len;
+}
+
+void *_sbrk(ptrdiff_t incr) {
+    return 0;
 }
 
 int _read(int file, char *ptr, int len) {
@@ -28,10 +32,6 @@ int _isatty(int file) {
 }
 
 int _lseek(int file, int ptr, int dir) {
-    return 0;
-}
-
-void *_sbrk(ptrdiff_t incr) {
     return 0;
 }
 

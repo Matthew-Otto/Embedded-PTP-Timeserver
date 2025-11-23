@@ -46,7 +46,7 @@ void reset_handler(void) {
 
     // initialize HW
     init_sysclk();
-    init_watchdog();
+    //init_watchdog();
     init_timer();
     GPIO_init();
     ETH_init();

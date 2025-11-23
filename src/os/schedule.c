@@ -25,6 +25,7 @@ static TCB_t *SleepScheduleRoot = NULL;
 // schedule next task
 void schedule(void) {
     uint32_t primask = start_critical();
+    toggle_GPIO(GPIOG, GPIO_PIN_3); // BOZO
 
     // update current thread / put it back into schedule
     if (RunPt->state == RUNNING) {
@@ -67,7 +68,7 @@ void init_scheduler(uint32_t timeslice /* timeslice in ms */) {
     // initialize idle task
     add_thread(suspend, 32, IDLE_PRIORITY);
 
-    // launch first thread
+    // schedule first thread
     uint8_t pri = 0;
     while (ActivePriorityCount[pri] == 0) { 
         pri++;
@@ -80,6 +81,10 @@ void init_scheduler(uint32_t timeslice /* timeslice in ms */) {
         RunPt->state = RUNNING;
         ActivePriorityCount[pri]--;
     }
+
+    // is this really necessary????
+    NVIC_SetPriority(PendSV_IRQn, 15);
+    NVIC_SetPriority(SysTick_IRQn, 14);
 
     // Execute SVC 0 to launch first task
     __enable_irq();
@@ -108,10 +113,16 @@ int add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
         return -1;
     }
 
-    LifetimeThreadCount++;
-    newtcb->id = LifetimeThreadCount;
-    newtcb->priority = priority;
-    newtcb->stack = stack;
+    if (priority == IDLE_PRIORITY) {
+        newtcb->id = 0;
+        newtcb->priority = priority;
+        newtcb->stack = stack;
+    } else {
+        LifetimeThreadCount++;
+        newtcb->id = LifetimeThreadCount;
+        newtcb->priority = priority;
+        newtcb->stack = stack;
+    }
 
     *stack = 0xDEADBEEF;  // magic value for stack overflow detection
     uint32_t *sp = stack + stack_size; // stack pointer starts at top of stack
@@ -147,9 +158,18 @@ void sched_block(semaphore_t *sem) {
     volatile uint32_t primask = start_critical();
 
     // BOZO
-    toggle_GPIO(GPIOC, GPIO_PIN_8);
+    toggle_GPIO(GPIOC, GPIO_PIN_10);
 
     TCB_t *thread = RunPt;
+
+    // BOZO
+    if (thread->id == 0) {
+        __asm volatile("BKPT #0");
+    }
+    // BOZO
+    if (__get_IPSR()) {
+        __asm volatile("BKPT #0");
+    }
     
     // remove RunPt from thread pool
     dequeue_thread(thread);
@@ -190,7 +210,7 @@ bool sched_unblock(semaphore_t *sem) {
     uint32_t primask = start_critical();
 
     // BOZO
-    toggle_GPIO(GPIOC, GPIO_PIN_9);
+    toggle_GPIO(GPIOC, GPIO_PIN_11);
 
     TCB_t *thread = sem->bthreads_root;
 
@@ -203,7 +223,7 @@ bool sched_unblock(semaphore_t *sem) {
     end_critical(primask);
 
     // determine if this unblocked thread was higher priority 
-    // than the thread that signaled it
+    // than the currently running thread
     return (thread->priority >= RunPt->priority);
 }
 
@@ -313,6 +333,8 @@ void suspend(void) {
 
 // perform context switch
 __attribute__((naked)) void pendSV_handler(void) {
+    // disable interrupts
+    __asm ("CPSID  I");
     // save context
     __asm ("MRS    R0, PSP");
     __asm ("STMDB  R0!, {R4-R11}");
@@ -330,6 +352,8 @@ __attribute__((naked)) void pendSV_handler(void) {
     __asm ("LDMIA  R0!, {R4-R11}");
     // load new SP
     __asm ("MSR    PSP, R0");
+    // enable interrupts
+    __asm ("CPSIE   I");
     // branch to new task
     // LR holds a magic value (0xffffffbc)
     // r0–r3, r12, lr, pc, xpsr are restored automatically in hardware
@@ -337,7 +361,6 @@ __attribute__((naked)) void pendSV_handler(void) {
 }
 
 void systick_handler(void) {
-    toggle_GPIO(GPIOD, GPIO_PIN_2); // BOZO
     kick_watchdog();
     schedule();
 }

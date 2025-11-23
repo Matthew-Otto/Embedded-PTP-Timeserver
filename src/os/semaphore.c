@@ -28,7 +28,7 @@ void b_signal(semaphore_t *sem) {
     sem->value = 0;
     __DMB();
     if (sem->bthreads_root != NULL) {
-        if (sched_unblock(sem)) schedule();
+        if (sched_unblock(sem)) NVIC_SetPendingIRQ(SysTick_IRQn);
     }
     end_critical(stat);
 }
@@ -36,7 +36,7 @@ void b_signal(semaphore_t *sem) {
 // decrements semaphore
 // blocks until semaphore is acquired
 void c_wait(semaphore_t *sem) {
-    disable_interrupts();
+    uint32_t stat = start_critical();
 
     while (sem->value == 0) {
         enable_interrupts();
@@ -46,7 +46,7 @@ void c_wait(semaphore_t *sem) {
     sem->value--;
     __DMB();
 
-    enable_interrupts();
+    end_critical(stat);
 }
 
 // increments semaphore
@@ -57,7 +57,7 @@ void c_signal(semaphore_t *sem) {
     sem->value++;
     __DMB();
     if (sem->bthreads_root != NULL) {
-        if (sched_unblock(sem)) schedule();
+        if (sched_unblock(sem)) NVIC_SetPendingIRQ(SysTick_IRQn);
     }
 
     end_critical(stat);

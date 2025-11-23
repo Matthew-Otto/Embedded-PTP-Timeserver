@@ -2,13 +2,14 @@
 #include "fifo.h"
 #include "heap.h"
 
-FIFO8_t *fifo8_init(uint32_t size) {
-    size_t fifo_size = sizeof(FIFO8_t) + size * sizeof(uint8_t);
+FIFO_t *fifo_init(uint32_t size) {
+    size_t fifo_size = sizeof(FIFO_t) + size * sizeof(uint8_t);
 
-    FIFO8_t *fifo = (FIFO8_t*)malloc(fifo_size);
+    FIFO_t *fifo = (FIFO_t*)malloc(fifo_size);
     if (fifo == NULL) return NULL;
 
-    init_semaphore(&fifo->full, fifo_size);
+    init_semaphore(&fifo->mutex, 0);
+    init_semaphore(&fifo->full, size);
     init_semaphore(&fifo->empty, 0);
 
     fifo->head = 0;
@@ -17,7 +18,7 @@ FIFO8_t *fifo8_init(uint32_t size) {
     return fifo;
 }
 
-void fifo8_put(FIFO8_t *fifo, uint8_t data) {
+void fifo_put(FIFO_t *fifo, uint8_t data) {
     c_wait(&fifo->full);
 
     fifo->data[fifo->tail] = data;
@@ -26,7 +27,7 @@ void fifo8_put(FIFO8_t *fifo, uint8_t data) {
     c_signal(&fifo->empty);
 }
 
-void fifo8_get(FIFO8_t *fifo, uint8_t *data) {
+void fifo_get(FIFO_t *fifo, uint8_t *data) {
     c_wait(&fifo->empty);
 
     *data = fifo->data[fifo->head];
@@ -35,9 +36,6 @@ void fifo8_get(FIFO8_t *fifo, uint8_t *data) {
     c_signal(&fifo->full);
 }
 
-uint16_t fifo8_size(FIFO8_t *fifo) {
-    if (fifo->tail >= fifo->head)
-        return fifo->tail - fifo->head;
-    else
-        return fifo->size - (fifo->head - fifo->tail);
+int32_t fifo_size(FIFO_t *fifo) {
+    return fifo->empty.value;
 }

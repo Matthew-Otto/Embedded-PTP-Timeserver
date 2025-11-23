@@ -11,7 +11,7 @@ MEMORY
 
 /* Configure Stack */
 _estack = ORIGIN(SRAM) + LENGTH(SRAM); /* top of SRAM */
-_stack_size = 32K;
+_stack_size = 4K;
 _stack_top = _estack;
 _stack_bottom = _estack - _stack_size;
 

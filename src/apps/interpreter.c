@@ -13,19 +13,24 @@ time [reset]:   print (or reset) the current system time\r\n\
 stats:          print various OS diagnostics\r\n\
 \r\n"
 
+
 const int UART_IDX = 3;
 const int buff_size = 256;
 
 void i_help(int argc, char **argv) {
+    toggle_GPIO(GPIOG, GPIO_PIN_2);  // BOZO
     uart_out_string(UART_IDX, HELP_MESSAGE);
+    toggle_GPIO(GPIOG, GPIO_PIN_2);  // BOZO
 }
 
 void i_get_time(int argc, char **argv) {
+    const int buff_size = 50;
+    char buff[buff_size];
     uint32_t sec;
     uint32_t frac;
     get_time(&sec, &frac);
-    //uart_out_string(UART_IDX, "> ");
-    printf("Raw system time: %u.%u", sec, frac);
+    snprintf(buff, buff_size, "Raw system time: %u.%u\r\n", sec, frac);
+    uart_out_string(UART_IDX, buff);
 }
 
 void i_crash(int argc, char **argv) {
@@ -44,7 +49,7 @@ cmd_t command_list[] = {
 void interpreter(void) {
     configure_pin(GPIOD, GPIO_PIN_8, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART3); // RX
     configure_pin(GPIOD, GPIO_PIN_9, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART3); // TX
-    init_uart(UART_IDX, 1000000, 128, 5);
+    init_uart(UART_IDX, 1000000, 92, 5);
     
     char strbuf[buff_size];
     char *argv[10];
