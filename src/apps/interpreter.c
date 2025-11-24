@@ -22,7 +22,6 @@ static char strbuf[BUFF_SIZE];
 
 
 
-
 static inline void print(char *str){
     uart_out_string(UART_IDX, str);
 }
@@ -32,9 +31,18 @@ void i_help(int argc, char **argv);
 void i_get_time(int argc, char **argv) {
     uint32_t sec;
     uint32_t frac;
-    get_time(&sec, &frac);
-    snprintf(strbuf, BUFF_SIZE, "Raw system time: %u.%u\r\n", sec, frac);
-    print(strbuf);
+
+    while (1) {
+        get_time(&sec, &frac);
+        snprintf(strbuf, BUFF_SIZE, "\rRaw system time: %u.%u", sec, frac);
+        print(strbuf);
+        sleep(500);
+        
+        if (uart_search_for_char_nonblocking(UART_IDX, 0x03)) {
+            print("\r\n");
+            break;
+        }
+    }
 }
 
 void i_stats(int argc, char **argv) {

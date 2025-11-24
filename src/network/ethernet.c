@@ -39,6 +39,7 @@ void ETH_IO_init(void);
 void ETH_PHY_init(void);
 void ETH_MAC_init(void);
 void ETH_DMA_init(void);
+void ETH_PTP_init(void);
 void ETH_int_init(void);
 
 
@@ -177,6 +178,7 @@ void ETH_init(semaphore_t *eth_rx_semaphore) {
     ETH_MAC_init();
     ETH_DMA_init();
     ETH_int_init();
+    ETH_PTP_init();
     
     // Start DMA transmit and receive
     SET_BIT(ETH->DMACTCR, ETH_DMACTCR_ST);
@@ -348,6 +350,7 @@ void ETH_PTP_init() {
     while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSINIT)); // wait for completion
 
     // Enable PTP offloading features
+#define MASTER
 #ifdef MASTER
     // Automatic PTP Sync messages
     MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);

@@ -147,6 +147,16 @@ void uart_in_string_reflect(uint8_t uart_idx, char *buff, uint32_t buff_size) {
     *buff = '\0';
 }
 
+// dumps everything currently in the input buffer. returns true if <search_char> is found
+bool uart_search_for_char_nonblocking(uint8_t uart_idx, char search_char) {
+    uint8_t inchar;
+    while (fifo_size(desc[uart_idx].rx_fifo)) {
+        fifo_get(desc[uart_idx].rx_fifo, &inchar);
+        if (inchar == uart_idx) return true;
+    }
+    return false;
+}
+
 void uart_out_char(uint8_t uart_idx, uint8_t data) {
     static int c = 0;
     

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include "gps.h"
+#include "semaphore.h"
 #include "uart.h"
 #include "gpio.h"
 #include "ethernet.h"
@@ -15,11 +16,13 @@
 static const int UART_IDX = 2;
 static char strbuf[BUFF_SIZE];
 
+static semaphore_t nmea_burst_sync;
 static gps_data_t gps_data;
+static bool time_synced = 0;
 
 
 // Split NMEA sentence into fields
-int split_fields(const char *sentence, char *fields[], int max_fields) {
+int split_fields(char *sentence, char *fields[], int max_fields) {
     int count = 0;
     char *token = strtok(sentence, ",");
     while (token && count < max_fields) {
@@ -43,11 +46,13 @@ void parse_GPZDA(char *fields[], int field_cnt) {
     time.tm_year = strtol(fields[4], &end, 10) - 1900;
 
     gps_data.utc_time = mktime(&time);
+    gps_data.valid_messages |= GPZDA_BIT;
 }
 
 void parse_GPRMC(char *fields[], int field_cnt) {
     if (field_cnt < 10) return;
     gps_data.fix_valid = (fields[2][0] == 'A'); // A=valid, V=invalid
+    gps_data.valid_messages |= GPRMC_BIT;
 }
 
 
@@ -57,6 +62,7 @@ void parse_nmea_sentence(const char *sentence) {
     char *fields[MAX_FIELD_CNT];
     int field_cnt = split_fields(sentence, fields, MAX_FIELD_CNT);
 
+    // UTC time and date
     if (strncmp(fields[0], "$GPZDA", 6) == 0)
         parse_GPZDA(fields, field_cnt);
     // Recommended Minimum Navigation Information
@@ -100,42 +106,40 @@ void gps_init(void) {
 void gps_timesync(void) {
     gps_init();
     init_uart(UART_IDX, 115200, 256, 3);
+    init_semaphore(&nmea_burst_sync, 1);
 
     enable_LED(RED_LED);
 
-    while(1) {
-        uart_in_string(UART_IDX, strbuf, BUFF_SIZE);
-        parse_nmea_sentence(strbuf);
-
-        CLEAR_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
-        // set time frac bits to zero
-        WRITE_REG(ETH->MACSTSUR, gps_data.utc_time);
-        // Update and wait for completion
-        SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT);
-        while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT));
+    while (1) {
+        b_wait(&nmea_burst_sync);
+        gps_data.valid_messages = 0;
+        while((gps_data.valid_messages & VALID_MSK) != VALID_MSK) {
+            uart_in_string(UART_IDX, strbuf, BUFF_SIZE);
+            parse_nmea_sentence(strbuf);
+        }
+        
+        disable_LED(RED_LED);
+        
+        if (gps_data.fix_valid && time_synced) {
+            toggle_GPIO(GPIOG, GPIO_PIN_2); // BOZO          
+            disable_LED(YELLOW_LED);
+            toggle_LED(GREEN_LED);
+        } else {
+            ETH_update_PTP_TS_coarse(gps_data.utc_time, 0);
+            time_synced = 1;
+            disable_LED(GREEN_LED);
+            enable_LED(YELLOW_LED);
+        }
     }
 }
 
-// TODO: capture time at interrupt and calculate adjustment 
+// TODO: capture time at interrupt and calculate fine adjustment parameters
 void EXTI7_IRQHandler(void) {
-    toggle_LED(YELLOW_LED);
-    /* CLEAR_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
-    // set time frac bits to zero
-    WRITE_REG(ETH->MACSTNUR, 0);
-    // Update and wait for completion
-    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT);
-    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT));
+    volatile uint32_t timestamp = READ_REG(ETH->MACSTNR);
 
-    process_gps();
+    toggle_GPIO(GPIOG, GPIO_PIN_3); // BOZO
 
-    if (gps_data.fix_valid) {
-        //WRITE_REG(ETH->MACSTSUR, offset_sec);
-        toggle_LED(GREEN_LED);
-        disable_LED(YELLOW_LED);
-    } else {
-        disable_LED(GREEN_LED);
-        enable_LED(YELLOW_LED);
-    } */
+    b_signal(&nmea_burst_sync);
 
     // ack interrupt
     SET_BIT(EXTI->RPR1, 0x1 << 7);

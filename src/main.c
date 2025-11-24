@@ -4,8 +4,6 @@
 #include "interpreter.h"
 #include "timeserver.h"
 #include "gps.h"
-#include "ntp.h"
-
 #include "gpio.h"
 
 /*
