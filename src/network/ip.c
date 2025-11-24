@@ -41,7 +41,6 @@ void process_icmp(icmp_header_t *icmp, ipv4_header_t *ip_pkt, eth_header_t *fram
         return; // Not Echo Request
 
     // respond to ping
-    // (we really shouldn't be doing this inside an interrupt handler)
     uint8_t *buffer = ETH_get_tx_buffer();
     if (buffer == NULL)
         return;

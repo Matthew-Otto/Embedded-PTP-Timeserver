@@ -7,7 +7,6 @@
 #include "timer.h"
 #include "heap.h"
 #include "gpio.h"
-#include "ethernet.h"
 
 extern uint32_t _stack_top;
 extern uint32_t _stack_bottom;
@@ -49,7 +48,6 @@ void reset_handler(void) {
     init_watchdog();
     init_timer();
     GPIO_init();
-    ETH_init();
 
     // init OS functions
     heap_init();

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 #include "gps.h"
 #include "uart.h"
 #include "gpio.h"
@@ -8,15 +9,17 @@
 #include "ip.h"
 
 
+#define BUFF_SIZE 256
 #define MAX_FIELD_CNT 20
-#define MAX_SENTENCE_LEN 84
 
-static char strbuf[MAX_SENTENCE_LEN];
+static const int UART_IDX = 2;
+static char strbuf[BUFF_SIZE];
+
 static gps_data_t gps_data;
 
 
 // Split NMEA sentence into fields
-static int split_fields(const char *sentence, char *fields[], int max_fields) {
+int split_fields(const char *sentence, char *fields[], int max_fields) {
     int count = 0;
     char *token = strtok(sentence, ",");
     while (token && count < max_fields) {
@@ -26,11 +29,25 @@ static int split_fields(const char *sentence, char *fields[], int max_fields) {
     return count;
 }
 
-static void parse_GPRMC(char *fields[], int field_cnt) {
+void parse_GPZDA(char *fields[], int field_cnt) {
+    if (field_cnt < 7) return;
+
+    char *end;
+    struct tm time = {0};
+    uint32_t utc_time = strtol(fields[1], &end, 10);
+    time.tm_hour = utc_time / 10000;
+    time.tm_min = (utc_time / 100) % 100;
+    time.tm_sec = utc_time % 100;
+    time.tm_mday = strtol(fields[2], &end, 10);
+    time.tm_mon = strtol(fields[3], &end, 10) - 1;
+    time.tm_year = strtol(fields[4], &end, 10) - 1900;
+
+    gps_data.utc_time = mktime(&time);
+}
+
+void parse_GPRMC(char *fields[], int field_cnt) {
     if (field_cnt < 10) return;
     gps_data.fix_valid = (fields[2][0] == 'A'); // A=valid, V=invalid
-    strncpy(gps_data.utc_time, fields[1], sizeof(gps_data.utc_time));
-    strncpy(gps_data.date, fields[9], sizeof(gps_data.date));
 }
 
 
@@ -40,8 +57,10 @@ void parse_nmea_sentence(const char *sentence) {
     char *fields[MAX_FIELD_CNT];
     int field_cnt = split_fields(sentence, fields, MAX_FIELD_CNT);
 
+    if (strncmp(fields[0], "$GPZDA", 6) == 0)
+        parse_GPZDA(fields, field_cnt);
     // Recommended Minimum Navigation Information
-    if (strncmp(fields[0], "$GPRMC", 6) == 0)
+    else if (strncmp(fields[0], "$GPRMC", 6) == 0)
         parse_GPRMC(fields, field_cnt);
     /* // Global Positioning System Fix Data
     else if (strncmp(fields[0], "$GPGGA", 6) == 0)
@@ -57,14 +76,7 @@ void parse_nmea_sentence(const char *sentence) {
         parse_GPGLL(fields, field_cnt); */
 }
 
-// Call this function regularly to update GPS state
-void process_gps(void) {
-    int uart_empty;
-    do {
-        uart_empty = uart_in_string_nonblocking(2, strbuf, MAX_SENTENCE_LEN);
-        parse_nmea_sentence(strbuf);
-    } while (!uart_empty);
-}
+
 
 void gps_init(void) {
     // configure gpio
@@ -74,24 +86,40 @@ void gps_init(void) {
     configure_pin(GPIOD, GPIO_PIN_4, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // GND
     configure_pin(GPIOD, GPIO_PIN_3, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // VCC
 
-    // configure uart
-    init_uart(2, 9600, 256, 5);
-    
+
     // power on gps via gpio pins
-    GPIOD->BSRR = (uint32_t)GPIO_PIN_4 << 16; // set gps gnd pin low
-    GPIOD->BSRR = (uint32_t)GPIO_PIN_3; // set gps vcc pin high
+    //GPIOD->BSRR = (uint32_t)GPIO_PIN_4 << 16; // set gps gnd pin low
+    //GPIOD->BSRR = (uint32_t)GPIO_PIN_3; // set gps vcc pin high
     
-    enable_LED(RED_LED);
 
     // configure pps interrupt
-    NVIC_SetPriority(EXTI7_IRQn, 3);
+    NVIC_SetPriority(EXTI7_IRQn, 0);
     NVIC_EnableIRQ(EXTI7_IRQn);
 }
 
+void gps_timesync(void) {
+    gps_init();
+    init_uart(UART_IDX, 115200, 256, 3);
+
+    enable_LED(RED_LED);
+
+    while(1) {
+        uart_in_string(UART_IDX, strbuf, BUFF_SIZE);
+        parse_nmea_sentence(strbuf);
+
+        CLEAR_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
+        // set time frac bits to zero
+        WRITE_REG(ETH->MACSTSUR, gps_data.utc_time);
+        // Update and wait for completion
+        SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT);
+        while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT));
+    }
+}
 
 // TODO: capture time at interrupt and calculate adjustment 
 void EXTI7_IRQHandler(void) {
-    CLEAR_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
+    toggle_LED(YELLOW_LED);
+    /* CLEAR_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
     // set time frac bits to zero
     WRITE_REG(ETH->MACSTNUR, 0);
     // Update and wait for completion
@@ -107,7 +135,7 @@ void EXTI7_IRQHandler(void) {
     } else {
         disable_LED(GREEN_LED);
         enable_LED(YELLOW_LED);
-    }
+    } */
 
     // ack interrupt
     SET_BIT(EXTI->RPR1, 0x1 << 7);

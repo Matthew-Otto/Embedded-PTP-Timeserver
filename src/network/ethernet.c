@@ -3,6 +3,7 @@
 #include <string.h>
 #include "mcu.h"
 #include "gpio.h"
+#include "semaphore.h"
 #include "ethernet.h"
 #include "ip.h"
 #include "ptp.h"
@@ -29,6 +30,8 @@ static uint32_t current_rx_desc_idx = 0;
 static uint32_t current_tx_desc_idx = 0;
 static uint32_t current_tx_buffer_idx = 0;
 
+static semaphore_t *rx_semaphore;
+
 
 // Forward declarations
 static inline void init_read_descriptor(volatile ETH_rx_rd_desc_t *desc, uint16_t idx);
@@ -40,17 +43,17 @@ void ETH_int_init(void);
 
 
 void ETH_IRQHandler(void) {
-    volatile uint32_t int_src = READ_REG(ETH->DMAISR);
-    volatile uint32_t isr;
-    if (int_src & ETH_DMAISR_DMACIS) {
+    uint32_t int_src = READ_REG(ETH->DMAISR);
+    uint32_t isr;
+    if (int_src & ETH_DMAISR_DMACIS) { // DMA interrupt
         isr = READ_REG(ETH->DMACSR);
         // Receive frame interrupt
-        if (isr & ETH_DMACIER_RIE) ETH_receive_frame();
+        if (isr & ETH_DMACIER_RIE) c_signal(rx_semaphore);
     }
-    else if (int_src & ETH_DMAISR_MACIS) {
+    else if (int_src & ETH_DMAISR_MACIS) { // MTL interrupt
         isr = READ_REG(ETH->MACISR);
     }
-    else if (int_src & ETH_DMAISR_MTLIS) {
+    else if (int_src & ETH_DMAISR_MTLIS) { // MAC interrupt
         isr = READ_REG(ETH->MTLISR);
     }
 
@@ -100,12 +103,6 @@ int ETH_receive_frame(){
 
     // Update RX descriptor tail pointer;
     WRITE_REG(ETH->DMACRDTPR, (uint32_t)&dma_rx_desc[current_rx_desc_idx]);
-
-    // BOZO check next descriptor just in case
-    volatile ETH_rx_wb_desc_t *wb_desc2 = &dma_rx_desc[current_rx_desc_idx].wb;
-    if (!(wb_desc2->status & (0x1<<15))) {
-        __asm volatile("BKPT #0");
-    }
 
     return 0;
 }
@@ -173,7 +170,8 @@ uint16_t ETH_build_header(uint8_t *buffer, uint8_t *dst_mac, uint16_t ethertype)
 }
 
 
-void ETH_init(){
+void ETH_init(semaphore_t *eth_rx_semaphore) {
+    rx_semaphore = eth_rx_semaphore;
     ETH_IO_init();
     ETH_PHY_init();
     ETH_MAC_init();

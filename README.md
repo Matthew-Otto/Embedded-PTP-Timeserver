@@ -1,36 +1,59 @@
-# Embedded GPS PTP Timeserver
+# Embedded GPS PTP Timeserver -- UNDER CONSTRUCTION --
 
-A GPS referenced Stratum 1 network time server with suport for IEEE 1588 Precision Time Protocol (PTP).
+A GPS referenced Stratum 1 network time server with support for IEEE 1588 Precision Time Protocol (PTP).
 
-Bare-metal implementation (using CMSIS register descriptions) written for the STMicroelectronics NUCLEO-H563ZI platform
+Bare-metal implementation written for the STMicroelectronics NUCLEO-H563ZI platform
 
----
 
-### Dependencies:
+
+## Dependencies:
 
 * arm-none-eabi-*
 * openocd-stm
 
+To build, run `make` from the top level directory.\
+To flash, run `make flash` from the top level directory.
+
+
+## RTOS
+
+This app runs on a custom RTOS supporting priority-based round-robin task scheduling.\
+It supports blocking semaphores and task sleeping.\
+It utilizes a basic buddy allocation scheme for heap management.\
+A command interpreter is exposed on the STLINK-V3EC Virtual COM port (USART3) by default. However, the serial interface used can be easily changed.
+
+
+## Networking (Ethernet)
+
+A dedicated task (timeserver.c) listens for network traffic. Once a packet is received, it is parsed and a response is generated and sent back to the network.\
+Some features can be modified via CLI (MAC/IP address)
+
+
+## GPS
+
+ublox LEA-5T
+
 ---
+---
+---
+## Ethernet Notes
 
-### Ethernet Notes
+When a valid packet is received from the network and passes MAC filtering, the DMA transfers the packet to memory referenced by the first available descriptor. the ethernet interrupt is then raised.
 
+~~
 The application sends data via Ethernet by assigning the address of an ethernet frame in memory to a DMA descriptor and triggering a transmission by updating the descriptor ring tail pointer.
 To receive, the application assigns a pointer to an empty buffer to a DMA descriptor and waits for a packet to arrive via the network.
 
 The MAC can output a PPS signal used to compare the synchronization between two devices. This function ETH_PPS_OUT can be assigned to pins PB5 and PG8
 
----
 
 ### Configuring Ethernet
-
 
 #### Configuring Clocks
 The Ethernet MAC uses three clocks connected to the AHB1 bus:
 ETH
 ETHTX
 ETHRX
-
 
 #### Configuring GPIO
 The Ethernet MAC on the STM32H563ZI connects to the PHY via RMII interface. This interface includes the following pins which should be configured as high-speed alt-function 11 (Ethernet) GPIO:
@@ -72,7 +95,8 @@ TODO filtering rx mac address
 
 ---
 
-### References / Resources:
+
+## References / Resources:
 
 [STMicroelectronics/OpenOCD](https://github.com/STMicroelectronics/OpenOCD)
 

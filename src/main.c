@@ -2,21 +2,16 @@
 #include "mcu.h"
 #include "schedule.h"
 #include "interpreter.h"
-#include "gpio.h"
+#include "timeserver.h"
 #include "gps.h"
 #include "ntp.h"
 
-#include "uart.h"
+#include "gpio.h"
 
 /*
 //// TODO
 periodically poll PHY for linkup/linkdown
 reconfigure MAC when new link autonegotiate finishes
-
-// TODO enable watchdog timer
-
-re-write semaphores
-update fifos to be thread safe
 */
 
 void toggle1(void) {
@@ -55,6 +50,8 @@ int main(void) {
     //gps_init();
     //ntp_process();
 
+    add_thread(gps_timesync, 512, 1);
+    add_thread(timeserver, 512, 1);
     add_thread(interpreter, 512, 1);
     //add_thread(toggle1, 512, 1);
     //add_thread(toggle2, 512, 1);

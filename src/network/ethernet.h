@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include "mcu.h"
+#include "semaphore.h"
 
 
 #define ETHERTYPE_ARP   0x0806
@@ -114,7 +115,7 @@ uint8_t* ETH_get_tx_buffer();
 uint16_t ETH_build_header(uint8_t *buffer, uint8_t *dst_mac, uint16_t ethertype);
 void ETH_update_PTP_TS_coarse(const int32_t offset_sec, const int32_t offset_nsec);
 void ETH_update_PTP_drift_comp(const int32_t comp);
-void ETH_init(void);
+void ETH_init(semaphore_t *eth_rx_semaphore);
 
 
 #endif // ETH_H
