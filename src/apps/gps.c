@@ -119,14 +119,17 @@ void gps_timesync(void) {
         }
         
         disable_LED(RED_LED);
+
+        volatile int32_t current_time = ETH->MACSTSR;
+        int32_t time_diff = gps_data.utc_time - current_time;
+        time_synced = (abs(time_diff) < 1);
         
         if (gps_data.fix_valid && time_synced) {
             toggle_GPIO(GPIOG, GPIO_PIN_2); // BOZO          
             disable_LED(YELLOW_LED);
             toggle_LED(GREEN_LED);
         } else {
-            ETH_update_PTP_TS_coarse(gps_data.utc_time, 0);
-            time_synced = 1;
+            ETH_update_PTP_TS_coarse(time_diff, 0);
             disable_LED(GREEN_LED);
             enable_LED(YELLOW_LED);
         }

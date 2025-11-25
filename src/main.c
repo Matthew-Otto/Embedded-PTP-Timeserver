@@ -45,12 +45,11 @@ int main(void) {
     configure_pin(GPIOG, GPIO_PIN_2, GPIO_MODE_OUTPUT_PP, GPIO_PULLDOWN, GPIO_SPEED_FREQ_VERY_HIGH, 0);
     configure_pin(GPIOG, GPIO_PIN_3, GPIO_MODE_OUTPUT_PP, GPIO_PULLDOWN, GPIO_SPEED_FREQ_VERY_HIGH, 0);
 
-    //gps_init();
-    //ntp_process();
 
     add_thread(gps_timesync, 512, 1);
     add_thread(timeserver, 512, 1);
     add_thread(interpreter, 512, 1);
+    
     //add_thread(toggle1, 512, 1);
     //add_thread(toggle2, 512, 1);
     //add_thread(toggle3, 512, 1);

@@ -58,6 +58,6 @@ void ntp_process() {
             send_ntp_resp();
             pending_req = 0;
         }
-        suspend();
+        //suspend(); // TODO yield
     }
 }
