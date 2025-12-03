@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <limits.h>
 #include <time.h>
 #include "gps.h"
 #include "semaphore.h"
@@ -9,6 +10,7 @@
 #include "ethernet.h"
 #include "ip.h"
 
+#include <stdio.h>
 
 #define BUFF_SIZE 256
 #define MAX_FIELD_CNT 20
@@ -18,7 +20,7 @@ static char strbuf[BUFF_SIZE];
 
 static semaphore_t nmea_burst_sync;
 static gps_data_t gps_data;
-static bool time_synced = 0;
+
 
 
 // Split NMEA sentence into fields
@@ -37,15 +39,15 @@ void parse_GPZDA(char *fields[], int field_cnt) {
 
     char *end;
     struct tm time = {0};
-    uint32_t utc_time = strtol(fields[1], &end, 10);
-    time.tm_hour = utc_time / 10000;
-    time.tm_min = (utc_time / 100) % 100;
-    time.tm_sec = utc_time % 100;
+    uint32_t unix_time = strtol(fields[1], &end, 10);
+    time.tm_hour = unix_time / 10000;
+    time.tm_min = (unix_time / 100) % 100;
+    time.tm_sec = unix_time % 100;
     time.tm_mday = strtol(fields[2], &end, 10);
     time.tm_mon = strtol(fields[3], &end, 10) - 1;
     time.tm_year = strtol(fields[4], &end, 10) - 1900;
 
-    gps_data.utc_time = mktime(&time);
+    gps_data.unix_time = mktime(&time);
     gps_data.valid_messages |= GPZDA_BIT;
 }
 
@@ -103,6 +105,11 @@ void gps_init(void) {
     NVIC_EnableIRQ(EXTI7_IRQn);
 }
 
+
+
+static int64_t pps_ts_q32;
+
+
 void gps_timesync(void) {
     gps_init();
     init_uart(UART_IDX, 115200, 256, 3);
@@ -110,35 +117,85 @@ void gps_timesync(void) {
 
     enable_LED(RED_LED);
 
+    const int32_t coarse_threshold = 5;
+    // PI controller
+    const int32_t Kp = 8;
+    const int32_t Ki = 100;
+    const int32_t integral_max = Ki * 3000000;
+    const int32_t integral_min = -Ki * 3000000;
+    int64_t integral_state = 0;
+
+
     while (1) {
         b_wait(&nmea_burst_sync);
+        disable_LED(RED_LED);
+
         gps_data.valid_messages = 0;
         while((gps_data.valid_messages & VALID_MSK) != VALID_MSK) {
             uart_in_string(UART_IDX, strbuf, BUFF_SIZE);
             parse_nmea_sentence(strbuf);
         }
-        
-        disable_LED(RED_LED);
 
-        volatile int32_t current_time = ETH->MACSTSR;
-        int32_t time_diff = gps_data.utc_time - current_time;
-        time_synced = (abs(time_diff) < 1);
-        
-        if (gps_data.fix_valid && time_synced) {
-            toggle_GPIO(GPIOG, GPIO_PIN_2); // BOZO          
-            disable_LED(YELLOW_LED);
-            toggle_LED(GREEN_LED);
-        } else {
-            ETH_update_PTP_TS_coarse(time_diff, 0);
+        int64_t ref_time_q32 = gps_data.unix_time << 32;
+        int64_t phase_error_q32 = ref_time_q32 - pps_ts_q32;
+
+        int32_t phase_error_int = (int32_t)(phase_error_q32 >> 32);
+        if (phase_error_q32 < 0) {
+            phase_error_int += 1;
+        }
+        // coarse correction
+        if (abs(phase_error_int) > coarse_threshold) {          
+            ETH_update_PTP_TS_oneshot(gps_data.unix_time, 0);
             disable_LED(GREEN_LED);
             enable_LED(YELLOW_LED);
+            continue;
         }
+
+        // BOZO DEBUG
+        uint32_t frac = (uint32_t)phase_error_q32;
+        double frac_d = (phase_error_q32 > 0) ? frac / 4294967296.0 : (-1 * frac) / 4294967296.0;
+        if (phase_error_q32 < 0)
+            printf("phase error: -%u.%09u\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
+        else
+            printf("phase error: %u.%09u\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
+
+
+        int32_t correction = 0;
+        // Proportional component
+        correction += phase_error_q32 / Kp;
+
+        printf("proportional: %d\r\n", correction); // BOZO DEBUG
+
+        // Integral component
+        integral_state += phase_error_q32;
+        if (integral_state > integral_max) {
+            integral_state = integral_max;
+        } else if (integral_state < integral_min) {
+            integral_state = integral_min;
+        }
+        correction += integral_state / Ki;
+
+
+        // DEBUG BOZO
+        int32_t test = integral_state / Ki;
+        printf("integral: %ld\r\n", test);
+        printf("correction: %d\r\n", correction);
+
+        
+
+        // fine correction
+        ETH_update_PTP_TS_fine(correction);
+        
+        toggle_GPIO(GPIOG, GPIO_PIN_2); // BOZO        
+        disable_LED(YELLOW_LED);
+        toggle_LED(GREEN_LED);
     }
 }
 
-// TODO: capture time at interrupt and calculate fine adjustment parameters
 void EXTI7_IRQHandler(void) {
-    volatile uint32_t timestamp = READ_REG(ETH->MACSTNR);
+    uint32_t pps_ns_ts = READ_REG(ETH->MACSTNR);
+    uint32_t pps_sec_ts = READ_REG(ETH->MACSTSR);
+    pps_ts_q32 = ((int64_t)pps_sec_ts << 32) | (pps_ns_ts << 1);
 
     toggle_GPIO(GPIOG, GPIO_PIN_3); // BOZO
 

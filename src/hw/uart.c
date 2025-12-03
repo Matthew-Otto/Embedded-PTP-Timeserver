@@ -53,7 +53,7 @@ static inline void uart_interrupt_handler(uint8_t uart_idx, USART_TypeDef *uart)
     // if data in rx hw fifo, put it in software fifo
     while (uart->ISR & USART_ISR_RXNE_RXFNE) {
         data = (0xFF & uart->RDR);
-        fifo_put(desc[uart_idx].rx_fifo, data);
+        fifo_put_nonblock(desc[uart_idx].rx_fifo, data);
     }
 
     // while tx hw fifo not full
@@ -65,7 +65,7 @@ static inline void uart_interrupt_handler(uint8_t uart_idx, USART_TypeDef *uart)
         }
         
         toggle_GPIO(GPIOD, GPIO_PIN_2);  // BOZO
-        fifo_get(desc[uart_idx].tx_fifo, &data);
+        fifo_get(desc[uart_idx].tx_fifo, &data); // TODO nonblock
         uart->TDR = data;
     }
 }

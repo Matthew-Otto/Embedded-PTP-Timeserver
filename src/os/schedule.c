@@ -117,16 +117,17 @@ int add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
     if (priority == IDLE_PRIORITY) {
         newtcb->id = 0;
         newtcb->priority = priority;
-        newtcb->stack = stack;
     } else {
         LifetimeThreadCount++;
         newtcb->id = LifetimeThreadCount;
         newtcb->priority = priority;
-        newtcb->stack = stack;
     }
+    newtcb->stack = stack;
+    newtcb->stack_bottom = stack;
+    newtcb->stack_top = stack + stack_size;
 
-    *stack = 0xDEADBEEF;  // magic value for stack overflow detection
-    uint32_t *sp = stack + stack_size; // stack pointer starts at top of stack
+    *newtcb->stack_bottom = 0xDEADBEEF;  // magic value for stack overflow detection
+    uint32_t *sp = newtcb->stack_top; // stack pointer starts at top of stack
 
     // initialize thread stack
     *(--sp) = xPSR_T_Msk;     // Set Thumb bit

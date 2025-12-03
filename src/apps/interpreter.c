@@ -34,9 +34,10 @@ void i_get_time(int argc, char **argv) {
 
     while (1) {
         get_time(&sec, &frac);
-        snprintf(strbuf, BUFF_SIZE, "Raw system time: %u.%u\r", sec, frac);
+        uint32_t ns = ((uint64_t)frac * 999999999) / 0x7FFFFFFF;
+        snprintf(strbuf, BUFF_SIZE, "Raw system time: %u.%09u\r", sec, ns);
         print(strbuf);
-        sleep(100);
+        sleep(17);
         
         if (uart_search_for_char_nonblocking(UART_IDX, 0x03)) {
             print("\r\n");

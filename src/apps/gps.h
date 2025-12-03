@@ -9,7 +9,7 @@
 
 typedef struct {
     uint8_t valid_messages;
-    uint64_t utc_time;
+    uint64_t unix_time;
     int fix_valid;
 } gps_data_t;
 

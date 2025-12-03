@@ -46,7 +46,7 @@ int main(void) {
     configure_pin(GPIOG, GPIO_PIN_3, GPIO_MODE_OUTPUT_PP, GPIO_PULLDOWN, GPIO_SPEED_FREQ_VERY_HIGH, 0);
 
 
-    add_thread(gps_timesync, 512, 1);
+    add_thread(gps_timesync, 1024, 1);
     add_thread(timeserver, 512, 1);
     add_thread(interpreter, 512, 1);
     

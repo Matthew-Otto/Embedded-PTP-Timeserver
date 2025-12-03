@@ -45,7 +45,8 @@ void reset_handler(void) {
 
     // initialize HW
     init_sysclk();
-    init_watchdog();
+    //init_watchdog();
+    init_fpu();
     init_timer();
     GPIO_init();
 
@@ -62,11 +63,11 @@ void hardfault_handler(void){
     volatile ERROR e = UNKNOWN;
     volatile uint32_t *stack_ptr;
     volatile uint32_t stack_ptr_addr;
+    volatile uint32_t lr_value;
     volatile uint32_t stack_top = (uint32_t)&_stack_top;
     volatile uint32_t stack_bottom = (uint32_t)&_stack_bottom;
-    volatile uint32_t lr_value;
 
-    /* Read active stack pointer and LR (EXC_RETURN) */
+    // Read active stack pointer and LR (EXC_RETURN)
     __asm volatile(
         "TST lr, #4\n"
         "ITE EQ\n"
@@ -91,10 +92,18 @@ void hardfault_handler(void){
 
     // programatically determine error that caused hardfault
     stack_ptr_addr = (uint32_t)stack_ptr;
-    if ((stack_ptr_addr < stack_bottom) || (stack_ptr_addr > stack_top)) e = STACK_OOB;
+    // HF in thread context
+    if (lr & 0x4) {
 
-    volatile uint32_t guard_val = *(uint32_t *)stack_bottom;
-    if (guard_val != 0xDEADBEEF) e = STACK_OVERFLOW;
+    
+    }
+    // HF in interrupt context
+    else {
+        if ((stack_ptr_addr < stack_bottom) || (stack_ptr_addr > stack_top)) e = STACK_OOB;
+        volatile uint32_t guard_val = *(uint32_t *)stack_bottom;
+        if (guard_val != 0xDEADBEEF) e = STACK_OVERFLOW;
+    }
+
 
     // hardware breakpoint
     //__asm volatile("BKPT #0");

@@ -44,7 +44,7 @@ void process_ptp_message(uint8_t *buffer) {
     }
 
     // Update clock
-    if (sync_valid && delay_valid) {
+    /* if (sync_valid && delay_valid) {
         volatile uint64_t master_time;
         volatile uint64_t slave_time;
         int32_t offset_sec = ((delay_recv_sec - delay_orig_sec) - (sync_recv_sec - sync_orig_sec)) / 2;
@@ -77,5 +77,5 @@ void process_ptp_message(uint8_t *buffer) {
 
         sync_valid = 0;
         delay_valid = 0;
-    }
+    } */
 }

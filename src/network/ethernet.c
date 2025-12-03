@@ -17,6 +17,7 @@ const uint8_t MACAddr[6] = {0x00,0x80,0xE1,0x00,0x00,0x00};
 // Global variables
 uint32_t rx_timestamp_sec;
 uint32_t rx_timestamp_nsec;
+uint32_t base_addend;
 
 // Local (static) variables
 __attribute__((section(".eth_rx_buffer")))
@@ -40,6 +41,7 @@ void ETH_PHY_init(void);
 void ETH_MAC_init(void);
 void ETH_DMA_init(void);
 void ETH_PTP_init(void);
+void ETH_PPS_init(void);
 void ETH_int_init(void);
 
 
@@ -179,6 +181,7 @@ void ETH_init(semaphore_t *eth_rx_semaphore) {
     ETH_DMA_init();
     ETH_int_init();
     ETH_PTP_init();
+    ETH_PPS_init();
     
     // Start DMA transmit and receive
     SET_BIT(ETH->DMACTCR, ETH_DMACTCR_ST);
@@ -338,10 +341,20 @@ void ETH_PTP_init() {
     // Enable timestamping
     SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSENA);
 
-    // configure subsecond increment value
-    const int CLK_PERIOD = 4; // clk_ptp_i period (4ns for 250MHz)
-    SET_BIT(ETH->MACSSIR, 8 << ETH_MACMACSSIR_SSINC_Pos);
+    // set subsecond rollover to 0x3B9AC9FF (999999999 nanosec)
     //SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCTRLSSR);
+    //const int CLK_PERIOD = 4; // clk_ptp_i period (4ns for 250MHz)
+    // configure subsecond increment value
+    const uint32_t CLK_PERIOD = 43; // (0x7FFFFFFF / 100000000) should count to 2^31 every second
+    SET_BIT(ETH->MACSSIR, CLK_PERIOD << ETH_MACMACSSIR_SSINC_Pos);
+    // Configure addend value (high precision frequency mult/div)
+    base_addend = ((uint64_t)0xFFFFFFFF * (uint64_t)50000000) / (uint64_t)get_clock_speed();
+    WRITE_REG(ETH->MACTSAR, base_addend);
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG);
+    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));
+
+    // Set fine update mode
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
 
     // Update system time
     WRITE_REG(ETH->MACSTSUR, 0);
@@ -417,27 +430,27 @@ void ETH_PPS_init(void) {
     // Exceeding target time (0 unless set) triggers PPS output
     MODIFY_REG(ETH->MACPPSCR, ETH_MACPPSCR_TRGTMODSEL0_Msk, 0x3 << ETH_MACPPSCR_TRGTMODSEL0_Pos);
     // Freq of PPS
-    MODIFY_REG(ETH->MACPPSCR, ETH_MACPPSCR_PPSCTRL_Msk, 0xF << ETH_MACPPSCR_PPSCTRL_Pos);
+    //MODIFY_REG(ETH->MACPPSCR, ETH_MACPPSCR_PPSCTRL_Msk, 0xF << ETH_MACPPSCR_PPSCTRL_Pos);
+    MODIFY_REG(ETH->MACPPSCR, ETH_MACPPSCR_PPSCTRL_Msk, 0x1 << ETH_MACPPSCR_PPSCTRL_Pos);
 }
 
 
-void ETH_update_PTP_TS_coarse(const int32_t offset_sec, const int32_t offset_nsec) {
-    // Set coarse update mode
-    CLEAR_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
+void ETH_update_PTP_TS_oneshot(const int32_t offset_sec, const int32_t offset_nsec) {
     WRITE_REG(ETH->MACSTSUR, offset_sec);
     WRITE_REG(ETH->MACSTNUR, offset_nsec);
-    // Update and wait for completion
-    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT);
-    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSUPDT));
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSINIT); // initialize timestamp value
+    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSINIT)); // wait for completion
 }
 
-void ETH_update_PTP_drift_comp(const int32_t comp) {
-    // Set fine update mode
-    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT);
-    WRITE_REG(ETH->MACTSAR, comp);
-
-    volatile uint32_t z = READ_REG(ETH->MACTSAR); // BOZO
-    // Update and wait for completion
+#include <stdio.h>
+void ETH_update_PTP_TS_fine(const int32_t correction) {
+    uint32_t old_addend = READ_REG(ETH->MACTSAR);
+    printf("old addend: %X\r\n", old_addend);
+    uint32_t new_addend = base_addend + correction;
+    printf("new addend: %X\r\n", new_addend);
+    
+    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));
+    WRITE_REG(ETH->MACTSAR, new_addend);
     SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG);
     while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));
 }

@@ -27,6 +27,11 @@ void fifo_put(FIFO_t *fifo, uint8_t data) {
     c_signal(&fifo->empty);
 }
 
+int fifo_put_nonblock(FIFO_t *fifo, uint8_t data) {
+    if (fifo->full.value == 0) return -1;
+    fifo_put(fifo, data);
+}
+
 void fifo_get(FIFO_t *fifo, uint8_t *data) {
     c_wait(&fifo->empty);
 

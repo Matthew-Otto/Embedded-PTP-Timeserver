@@ -18,6 +18,8 @@ struct TCB {
     uint32_t resume_tick;
     uint8_t priority;
     uint32_t *stack;
+    uint32_t *stack_top;
+    uint32_t *stack_bottom;
 };
 
 

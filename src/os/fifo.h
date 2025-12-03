@@ -16,6 +16,7 @@ typedef struct {
 
 FIFO_t* fifo_init(uint32_t size);
 void fifo_put(FIFO_t *fifo, uint8_t data);
+int fifo_put_nonblock(FIFO_t *fifo, uint8_t data);
 void fifo_get(FIFO_t *fifo, uint8_t *data);
 int32_t fifo_size(FIFO_t *fifo);
 

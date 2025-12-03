@@ -20,7 +20,7 @@ MKDIR   = @mkdir -p $(@D) #creates folders if not present
 # FLAGS
 MCU = -mcpu=cortex-m33 -mthumb -mfloat-abi=hard -mfpu=fpv5-sp-d16
 DEBUG = 1
-OPT = -Og
+OPT = -O0 #-Og
 LIBS = -lm -lnosys
 LDSCRIPT = $(SRC_DIR)stm32h563.ld
 INC = -I$(SRC_DIR)/inc -I$(SRC_DIR)/hw -I$(SRC_DIR)/os -I$(SRC_DIR)/network -I$(SRC_DIR)/apps
