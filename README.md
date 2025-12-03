@@ -1,6 +1,6 @@
 # Embedded GPS PTP Timeserver -- UNDER CONSTRUCTION --
 
-A GPS referenced Stratum 1 network time server with support for IEEE 1588 Precision Time Protocol (PTP).
+A GPS-referenced Stratum 1 network time server with support for IEEE 1588 Precision Time Protocol (PTP).
 
 Bare-metal implementation written for the STMicroelectronics NUCLEO-H563ZI platform
 
@@ -15,6 +15,30 @@ To build, run `make` from the top level directory.\
 To flash, run `make flash` from the top level directory.
 
 
+## Timing
+
+The Ethernet MAC contains a hardware timer used to timestamp PTP packets as they enter/leave the device. This timer can also be modified by software and is used as the authoritative time source when generating NTP packets.
+
+## Networking (Ethernet)
+
+A dedicated task (timeserver.c) listens for network traffic. Once a packet is received, it is parsed and a response is generated and sent back to the network.\
+Current protocol support includes:
+* ICMP
+* NTP
+* L3 PTP (TODO)
+
+Some features can be modified via CLI (MAC/IP address) (TODO)
+
+L2 PTP is handled automatically in the Ethernet MAC of the STM32H563
+
+
+## GPS
+
+UTC time is received via GPS module (I use a ublox LEA-5T) over serial (USART2). Precise corrections are performed in an interrupt triggered by a PPS signal from GPS.
+
+(When I finalize the algorithm I will describe it here)
+
+
 ## RTOS
 
 This app runs on a custom RTOS supporting priority-based round-robin task scheduling.\
@@ -23,26 +47,16 @@ It utilizes a basic buddy allocation scheme for heap management.\
 A command interpreter is exposed on the STLINK-V3EC Virtual COM port (USART3) by default. However, the serial interface used can be easily changed.
 
 
-## Networking (Ethernet)
-
-A dedicated task (timeserver.c) listens for network traffic. Once a packet is received, it is parsed and a response is generated and sent back to the network.\
-Some features can be modified via CLI (MAC/IP address)
-
-
-## GPS
-
-ublox LEA-5T
-
 ---
 ---
 ---
 ## Ethernet Notes
 
-When a valid packet is received from the network and passes MAC filtering, the DMA transfers the packet to memory referenced by the first available descriptor. the ethernet interrupt is then raised.
-
-~~
 The application sends data via Ethernet by assigning the address of an ethernet frame in memory to a DMA descriptor and triggering a transmission by updating the descriptor ring tail pointer.
 To receive, the application assigns a pointer to an empty buffer to a DMA descriptor and waits for a packet to arrive via the network.
+
+When a valid packet is received from the network and passes MAC filtering, the DMA transfers the packet to memory referenced by the first available descriptor. the ethernet interrupt is then raised.
+The packet need not be copied again. PAckets should be processed in place and the descriptor returned to DMA once the memory can be freed.
 
 The MAC can output a PPS signal used to compare the synchronization between two devices. This function ETH_PPS_OUT can be assigned to pins PB5 and PG8
 
@@ -96,19 +110,11 @@ The LAN8742A-CZ-TR PHY is set to autonegotiate out of the box and likely doesn't
 3. Set MDIO clock to a reasonable division of the system clock in the MACMDIOAR register
 
 
-#### Configuring DMA
-Memory dedicated for Rx DMA descriptors:
-1524 bytes * 4 descriptors = 6096 -> 8192 bytes
-TODO configure descriptors
-* Enable DMA transmit and receive functions
-
 #### Configuring MAC
 
-TODO mac address \
+TODO mac address, IP address\
+TODO describe automatic ARP handling\
 TODO filtering rx mac address
-* Enable MTL transmit and receive functions
-* Enable MAC transmit and receive functions
-
 
 
 ---
