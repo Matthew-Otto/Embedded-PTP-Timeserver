@@ -2,7 +2,6 @@
 #include "uart.h"
 #include "fifo.h"
 
-#include "gpio.h" // BOZO
 
 static uart_desc_t desc[5];
 
@@ -64,7 +63,6 @@ static inline void uart_interrupt_handler(uint8_t uart_idx, USART_TypeDef *uart)
             break;
         }
         
-        toggle_GPIO(GPIOD, GPIO_PIN_2);  // BOZO
         fifo_get(desc[uart_idx].tx_fifo, &data); // TODO nonblock
         uart->TDR = data;
     }
@@ -158,10 +156,6 @@ bool uart_search_for_char_nonblocking(uint8_t uart_idx, char search_char) {
 }
 
 void uart_out_char(uint8_t uart_idx, uint8_t data) {
-    static int c = 0;
-    
-
-    toggle_GPIO(GPIOC, GPIO_PIN_12);  // BOZO
     // if tx_fifo is empty and hardware fifo is not full
     if (!fifo_size(desc[uart_idx].tx_fifo) && (desc[uart_idx].uart->ISR & USART_ISR_TXE_TXFNF)) {
         //put directly into hardware TX buffer

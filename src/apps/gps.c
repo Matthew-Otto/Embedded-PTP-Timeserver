@@ -20,6 +20,10 @@ static char strbuf[BUFF_SIZE];
 
 static semaphore_t nmea_burst_sync;
 static gps_data_t gps_data;
+static int64_t pps_ts_q32;
+
+static bool timing_lock = 0;
+static int sync_cnt = 0;
 
 
 
@@ -106,10 +110,6 @@ void gps_init(void) {
 }
 
 
-
-static int64_t pps_ts_q32;
-
-
 void gps_timesync(void) {
     gps_init();
     init_uart(UART_IDX, 115200, 256, 3);
@@ -120,30 +120,30 @@ void gps_timesync(void) {
     const int32_t coarse_threshold = 5;
     // PI controller
     const int32_t Kp = 8;
-    const int32_t Ki = 100;
+    const int32_t Ki = 40;
     const int32_t integral_max = Ki * 3000000;
     const int32_t integral_min = -Ki * 3000000;
     int64_t integral_state = 0;
 
-
     while (1) {
         b_wait(&nmea_burst_sync);
-        disable_LED(RED_LED);
-
+        
         gps_data.valid_messages = 0;
         while((gps_data.valid_messages & VALID_MSK) != VALID_MSK) {
             uart_in_string(UART_IDX, strbuf, BUFF_SIZE);
             parse_nmea_sentence(strbuf);
         }
+        disable_LED(RED_LED);
 
         int64_t ref_time_q32 = gps_data.unix_time << 32;
         int64_t phase_error_q32 = ref_time_q32 - pps_ts_q32;
 
+
+        // coarse correction
         int32_t phase_error_int = (int32_t)(phase_error_q32 >> 32);
         if (phase_error_q32 < 0) {
             phase_error_int += 1;
         }
-        // coarse correction
         if (abs(phase_error_int) > coarse_threshold) {          
             ETH_update_PTP_TS_oneshot(gps_data.unix_time, 0);
             disable_LED(GREEN_LED);
@@ -155,16 +155,14 @@ void gps_timesync(void) {
         uint32_t frac = (uint32_t)phase_error_q32;
         double frac_d = (phase_error_q32 > 0) ? frac / 4294967296.0 : (-1 * frac) / 4294967296.0;
         if (phase_error_q32 < 0)
-            printf("phase error: -%u.%09u\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
+            printf("phase error: -%u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
         else
-            printf("phase error: %u.%09u\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
+            printf("phase error: %u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
 
 
         int32_t correction = 0;
         // Proportional component
         correction += phase_error_q32 / Kp;
-
-        printf("proportional: %d\r\n", correction); // BOZO DEBUG
 
         // Integral component
         integral_state += phase_error_q32;
@@ -173,32 +171,52 @@ void gps_timesync(void) {
         } else if (integral_state < integral_min) {
             integral_state = integral_min;
         }
-        correction += integral_state / Ki;
-
-
-        // DEBUG BOZO
-        int32_t test = integral_state / Ki;
-        printf("integral: %ld\r\n", test);
-        printf("correction: %d\r\n", correction);
-
-        
+        correction += integral_state / Ki;     
 
         // fine correction
         ETH_update_PTP_TS_fine(correction);
         
-        toggle_GPIO(GPIOG, GPIO_PIN_2); // BOZO        
-        disable_LED(YELLOW_LED);
-        toggle_LED(GREEN_LED);
+
+        // update LEDs
+        if (abs(phase_error_q32) < 215) { // < ~50ns
+            if (sync_cnt > 5) {
+                timing_lock = true;
+                disable_LED(YELLOW_LED);
+            } else {
+                sync_cnt++;
+            }
+        } else {
+            sync_cnt = 0;
+            timing_lock = false;
+            enable_LED(YELLOW_LED);
+        }
+        disable_LED(GREEN_LED);  
     }
 }
 
 void EXTI7_IRQHandler(void) {
     uint32_t pps_ns_ts = READ_REG(ETH->MACSTNR);
     uint32_t pps_sec_ts = READ_REG(ETH->MACSTSR);
+    uint32_t pps_ns_ts2 = READ_REG(ETH->MACSTNR);
+    uint32_t pps_sec_ts2 = READ_REG(ETH->MACSTSR);
+    
+    // if roll over occurred during read
+    bool rollover_occurred = pps_ns_ts2 < pps_ns_ts;
+    // if the sec_ts value matches the value of MACSTSR after rollover, it was sampled after rollover
+    bool sampled_after_rollover = pps_sec_ts == pps_sec_ts2;
+
+    if (rollover_occurred && sampled_after_rollover) {
+        pps_sec_ts -= 1;
+    }
+
+    // combine both timestamps into a single q32.32 value
     pps_ts_q32 = ((int64_t)pps_sec_ts << 32) | (pps_ns_ts << 1);
 
-    toggle_GPIO(GPIOG, GPIO_PIN_3); // BOZO
+    if (timing_lock) {
+        enable_LED(GREEN_LED);
+    }
 
+    // signal gps_timesync task to read NMEA data
     b_signal(&nmea_burst_sync);
 
     // ack interrupt

@@ -7,8 +7,6 @@
 #include "heap.h"
 #include "timer.h"
 
-#include "gpio.h" // BOZO
-
 TCB_t *RunPt;
 TCB_t *NextRunPt;
 TCB_t *IdleThread = {NULL};
@@ -165,9 +163,6 @@ int add_thread(void(*task)(void), uint32_t stack_size, uint32_t priority) {
 void sched_block(semaphore_t *sem) {
     volatile uint32_t primask = start_critical();
 
-    // BOZO
-    toggle_GPIO(GPIOC, GPIO_PIN_10);
-
     TCB_t *thread = RunPt;
   
     // remove RunPt from thread pool
@@ -207,9 +202,6 @@ void sched_block(semaphore_t *sem) {
 // insert thread back into schedule
 bool sched_unblock(semaphore_t *sem) {
     uint32_t primask = start_critical();
-
-    // BOZO
-    toggle_GPIO(GPIOC, GPIO_PIN_11);
 
     TCB_t *thread = sem->bthreads_root;
 

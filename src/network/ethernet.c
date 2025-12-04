@@ -444,11 +444,7 @@ void ETH_update_PTP_TS_oneshot(const int32_t offset_sec, const int32_t offset_ns
 
 #include <stdio.h>
 void ETH_update_PTP_TS_fine(const int32_t correction) {
-    uint32_t old_addend = READ_REG(ETH->MACTSAR);
-    printf("old addend: %X\r\n", old_addend);
-    uint32_t new_addend = base_addend + correction;
-    printf("new addend: %X\r\n", new_addend);
-    
+    uint32_t new_addend = base_addend + correction;  
     while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));
     WRITE_REG(ETH->MACTSAR, new_addend);
     SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG);
