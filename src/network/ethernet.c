@@ -345,10 +345,10 @@ void ETH_PTP_init() {
     //SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCTRLSSR);
     //const int CLK_PERIOD = 4; // clk_ptp_i period (4ns for 250MHz)
     // configure subsecond increment value
-    const uint32_t CLK_PERIOD = 43; // (0x7FFFFFFF / 100000000) should count to 2^31 every second
+    const uint32_t CLK_PERIOD = 21; // (0x7FFFFFFF / 100000000) should count to 2^31 every second
     SET_BIT(ETH->MACSSIR, CLK_PERIOD << ETH_MACMACSSIR_SSINC_Pos);
     // Configure addend value (high precision frequency mult/div)
-    base_addend = ((uint64_t)0xFFFFFFFF * (uint64_t)50000000) / (uint64_t)get_clock_speed();
+    base_addend = ((uint64_t)0xFFFFFFFF * (uint64_t)100000000) / (uint64_t)get_clock_speed();
     WRITE_REG(ETH->MACTSAR, base_addend);
     SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG);
     while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));

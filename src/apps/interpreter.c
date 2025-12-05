@@ -102,10 +102,10 @@ void interpreter(void) {
     bool match;
 
     print("\x1B[2J\x1B[H"); // clear terminal
-    print("Enter a command:\r\n");
+    //print("Enter a command:\r\n");
     while (1) {
         // get input
-        print("> ");
+        //print("> ");
         uart_in_string_reflect(UART_IDX, strbuf, BUFF_SIZE);
         print("\r\n");
 

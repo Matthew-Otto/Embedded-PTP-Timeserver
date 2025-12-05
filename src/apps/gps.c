@@ -119,10 +119,10 @@ void gps_timesync(void) {
 
     const int32_t coarse_threshold = 5;
     // PI controller
-    const int32_t Kp = 8;
-    const int32_t Ki = 40;
-    const int32_t integral_max = Ki * 3000000;
-    const int32_t integral_min = -Ki * 3000000;
+    const int32_t Kp = 3;
+    const int32_t Ki = 12;
+    const int64_t integral_max = Ki * 50000000;
+    const int64_t integral_min = -Ki * 50000000;
     int64_t integral_state = 0;
 
     while (1) {
@@ -152,17 +152,20 @@ void gps_timesync(void) {
         }
 
         // BOZO DEBUG
+        printf("\x1B[2J\x1B[H");
         uint32_t frac = (uint32_t)phase_error_q32;
         double frac_d = (phase_error_q32 > 0) ? frac / 4294967296.0 : (-1 * frac) / 4294967296.0;
         if (phase_error_q32 < 0)
             printf("phase error: -%u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
         else
-            printf("phase error: %u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
+            printf("phase error:  %u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
 
 
         int32_t correction = 0;
         // Proportional component
         correction += phase_error_q32 / Kp;
+
+        printf("proportional: %d\r\n", correction); // BOZO DEBUG
 
         // Integral component
         integral_state += phase_error_q32;
@@ -171,14 +174,19 @@ void gps_timesync(void) {
         } else if (integral_state < integral_min) {
             integral_state = integral_min;
         }
-        correction += integral_state / Ki;     
+        correction += integral_state / Ki;
+
+        // DEBUG BOZO
+        int32_t test = integral_state / Ki;
+        printf("integral:     %ld\r\n", test);
+        printf("correction:   %d\r\n", correction);
 
         // fine correction
         ETH_update_PTP_TS_fine(correction);
         
 
         // update LEDs
-        if (abs(phase_error_q32) < 215) { // < ~50ns
+        if (abs(phase_error_q32) < 430) { // < ~100ns
             if (sync_cnt > 5) {
                 timing_lock = true;
                 disable_LED(YELLOW_LED);

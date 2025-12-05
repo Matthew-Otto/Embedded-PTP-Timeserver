@@ -1,9 +1,8 @@
-# Embedded GPS PTP Timeserver -- UNDER CONSTRUCTION --
+# Embedded GPS PTP Timeserver
 
-A GPS-referenced Stratum 1 network time server with support for IEEE 1588 Precision Time Protocol (PTP).
+A GPS-referenced Stratum 1 network time server with support for Precision Time Protocol (PTP, IEEE 1588) and NTPv4 (RFC 5905).
 
-Bare-metal implementation written for the STMicroelectronics NUCLEO-H563ZI platform
-
+This implementation is entirely bare metal, all of the code in this repo was written from scratch for the STMicroelectronics NUCLEO-H563ZI platform.
 
 
 ## Dependencies:
@@ -15,11 +14,19 @@ To build, run `make` from the top level directory.\
 To flash, run `make flash` from the top level directory.
 
 
-## Timing
+## Platform
+
+TODO discuss MCU
+
+
+
+## Implementation details
+
+### Timing
 
 The Ethernet MAC contains a hardware timer used to timestamp PTP packets as they enter/leave the device. This timer can also be modified by software and is used as the authoritative time source when generating NTP packets.
 
-## Networking (Ethernet)
+### Networking (Ethernet)
 
 A dedicated task (timeserver.c) listens for network traffic. Once a packet is received, it is parsed and a response is generated and sent back to the network.\
 Current protocol support includes:
@@ -32,14 +39,19 @@ Some features can be modified via CLI (MAC/IP address) (TODO)
 L2 PTP is handled automatically in the Ethernet MAC of the STM32H563
 
 
-## GPS
+### GPS
 
-UTC time is received via GPS module (I use a ublox LEA-5T) over serial (USART2). Precise corrections are performed in an interrupt triggered by a PPS signal from GPS.
+UTC time is received via GPS module (I use a ublox LEA-5T) over serial (USART2). Current system time is sampled in an interrupt triggered by a PPS signal from GPS. The frequency divider driving the system timer is then adjusted using a PI controller to smoothly align the system time to UTC time.
 
-(When I finalize the algorithm I will describe it here)
+#### Tuning PI(D) controller
+The proportional component should be as large as possible without causing oscillations. This is fairly easy to tune by disabling all the other components and plotting the error over time. However, I found that I was able to increase the proportional gain after including the integral component.
+
+The integral part should have a range large enough to correct for the steady-state frequency-offset of the fine clock divider. The maximum value shouldn't be set much higher than this in order to minimize wind-up. A good way to find the steady-state offset required is to run the time sync with only the proportional component enabled. While in this mode, the error will converge to some nonzero value. The correction value applied when the error becomes stable is the value the integral component should assume at steady state.
+
+To tune the integral gain, set it to ~1/100 the proportional gain and increase until oscillations occur, then back off by a value of 10 or so.
 
 
-## RTOS
+### RTOS
 
 This app runs on a custom RTOS supporting priority-based round-robin task scheduling.\
 It supports blocking semaphores and task sleeping.\
@@ -129,3 +141,5 @@ TODO filtering rx mac address
 [STM32H563 Reference Manual](https://www.st.com/resource/en/reference_manual/rm0481-stm32h52333xx-stm32h56263xx-and-stm32h573xx-armbased-32bit-mcus-stmicroelectronics.pdf) (RM0481)
 
 [STM32H563 Datasheet](https://www.st.com/resource/en/datasheet/stm32h562ag.pdf) (DS14258)
+
+[PID Without a PhD](https://www.wescottdesign.com/articles/pid/pidWithoutAPhd.pdf)
