@@ -16,53 +16,57 @@ To flash, run `make flash` from the top level directory.
 
 ## Platform
 
-TODO discuss MCU
+### Hardware
+This project was built for the STMicroelectronics NUCLEO-H563ZI. This board features an Arm Cortex-M33 running at (up-to) 250MHz and 100 Mbps Ethernet with hardware timestamping support (for IEEE 1588 PTP)
 
-
-
-## Implementation details
+The main 32.768 kHz crystal oscillator is quite unstable, making accurate time-keeping over long durations impossible. I plan to replace it with a TCXO at some point in the future.
 
 ### Timing
 
 The Ethernet MAC contains a hardware timer used to timestamp PTP packets as they enter/leave the device. This timer can also be modified by software and is used as the authoritative time source when generating NTP packets.
 
-### Networking (Ethernet)
-
-A dedicated task (timeserver.c) listens for network traffic. Once a packet is received, it is parsed and a response is generated and sent back to the network.\
-Current protocol support includes:
-* ICMP
-* NTP
-* L3 PTP (TODO)
-
-Some features can be modified via CLI (MAC/IP address) (TODO)
-
-L2 PTP is handled automatically in the Ethernet MAC of the STM32H563
-
-
 ### GPS
 
 UTC time is received via GPS module (I use a ublox LEA-5T) over serial (USART2). Current system time is sampled in an interrupt triggered by a PPS signal from GPS. The frequency divider driving the system timer is then adjusted using a PI controller to smoothly align the system time to UTC time.
 
-#### Tuning PI(D) controller
+![sync ack gif](figures/sync_lock.gif)
+
+A demo of the system time synchronizing with GPS. The yellow trace is the PPS reference from GPS. The blue trace is the PPS signal originating in the Ethernet MAC.
+
+The frequency drift of the main clock (and maybe also the GPS receiver) is quite noticeable at steady-state.
+
+
+### Networking (Ethernet)
+
+Custom netcode receives packets from the internet and passes them to a dedicated timeserver process.
+
+This process will provide time to network clients over either NTP or Layer3 PTP(TODO)
+
+L2 PTP is handled automatically in the Ethernet MAC of the STM32H563
+
+### RTOS
+
+This app runs on a custom RTOS supporting priority-based round-robin task scheduling.\
+Various primitives such as blocking semaphores and multi-thread safe FIFOs are included.\
+It also includes custom heap management using buddy allocation.\
+Custom netcode allows passing network traffic to multiple separate processes based on protocol/port mappings.\
+A command interpreter is exposed on the STLINK-V3EC Virtual COM port (USART3) by default. However, the serial interface used can be easily changed.\
+This interpreter exposes various OS statistics and information on the running application(s).
+
+---
+---
+---
+
+## Implementation details (under construction)
+
+### Tuning PI(D) controller
 The proportional component should be as large as possible without causing oscillations. This is fairly easy to tune by disabling all the other components and plotting the error over time. However, I found that I was able to increase the proportional gain after including the integral component.
 
 The integral part should have a range large enough to correct for the steady-state frequency-offset of the fine clock divider. The maximum value shouldn't be set much higher than this in order to minimize wind-up. A good way to find the steady-state offset required is to run the time sync with only the proportional component enabled. While in this mode, the error will converge to some nonzero value. The correction value applied when the error becomes stable is the value the integral component should assume at steady state.
 
 To tune the integral gain, set it to ~1/100 the proportional gain and increase until oscillations occur, then back off by a value of 10 or so.
 
-
-### RTOS
-
-This app runs on a custom RTOS supporting priority-based round-robin task scheduling.\
-It supports blocking semaphores and task sleeping.\
-It utilizes a basic buddy allocation scheme for heap management.\
-A command interpreter is exposed on the STLINK-V3EC Virtual COM port (USART3) by default. However, the serial interface used can be easily changed.
-
-
----
----
----
-## Ethernet Notes
+### Ethernet Notes
 
 The application sends data via Ethernet by assigning the address of an ethernet frame in memory to a DMA descriptor and triggering a transmission by updating the descriptor ring tail pointer.
 To receive, the application assigns a pointer to an empty buffer to a DMA descriptor and waits for a packet to arrive via the network.
@@ -86,7 +90,7 @@ i.e.: for a theoretical precision of 10ns, the subsecond register should be incr
 In this case, the value of MACSSIR should be: 0x7FFFFFFF / 100000000 = ~21
 
 To adjust for clock skew, the subsecond register is incremented using a high precision clock divider/multiplier implemented as another 32-bit timer.\
-This timer increments the subsecond register when it rolls over. The value added to this timer every cycle is contained in the MACTSAR register. \
+This timer increments the subsecond register when it rolls over. The value added to this timer at every cycle is contained in the MACTSAR register. \
 The proper value for MACTSAR can be calculated with: 0xFFFFFFFF / (clock_speed / subsec_incr_freq)
 i.e.: If the subsecond register is configured to increment at 100MHz and the system clock operates at 250MHz, MACTSAR should be set to 0xFFFFFFFF / (250M / 100M) = 1717986918.\
 This register should be updated using the true value of the system clock as it drifts away from 250MHz.
