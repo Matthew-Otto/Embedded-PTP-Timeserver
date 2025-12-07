@@ -12,27 +12,6 @@ periodically poll PHY for linkup/linkdown
 reconfigure MAC when new link autonegotiate finishes
 */
 
-void toggle1(void) {
-    while (1) {
-        //sleep(100);
-        toggle_GPIO(GPIOC, GPIO_PIN_8);
-    }
-}
-void toggle2(void) {
-    while (1) {
-        toggle_GPIO(GPIOC, GPIO_PIN_9);
-    }
-}
-void toggle3(void) {
-    while (1) {
-        toggle_GPIO(GPIOC, GPIO_PIN_10);
-    }
-}
-void toggle4(void) {
-    while (1) {
-        toggle_GPIO(GPIOC, GPIO_PIN_11);
-    }
-}
 
 
 int main(void) {
@@ -49,13 +28,17 @@ int main(void) {
     add_thread(gps_timesync, 1024, 1);
     add_thread(timeserver, 512, 1);
     add_thread(interpreter, 512, 1);
-    
-    //add_thread(toggle1, 512, 1);
-    //add_thread(toggle2, 512, 1);
-    //add_thread(toggle3, 512, 1);
-    //add_thread(toggle4, 512, 1);
+
 
     init_scheduler(1);
 
     return 0;
 }
+
+/*
+after processing a frame, 
+trigger GPDMA to put payload into some buffer
+when that DMA finishes, release the ETH buffer back to its DMA
+
+if the frame is invalid, just release its buffer back to eth dma immediately
+*/

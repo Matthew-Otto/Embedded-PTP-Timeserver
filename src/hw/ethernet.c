@@ -5,8 +5,8 @@
 #include "gpio.h"
 #include "semaphore.h"
 #include "ethernet.h"
-#include "ip.h"
-#include "ptp.h"
+#include "network.h"
+
 
 const uint8_t MACAddr[6] = {0x00,0x80,0xE1,0x00,0x00,0x00};
 
@@ -68,50 +68,57 @@ void ETH_IRQHandler(void) {
 
 // Checks for valid RX descriptors
 // If one exists, process it before resetting DMA descriptor
-int ETH_receive_frame(){
-    volatile ETH_rx_rd_desc_t *rd_desc = &dma_rx_desc[current_rx_desc_idx].rd;
-    volatile ETH_rx_wb_desc_t *wb_desc = &dma_rx_desc[current_rx_desc_idx].wb;
+uint8_t *ETH_receive_frame(){
+    ETH_rx_rd_desc_t *rd_desc = &dma_rx_desc[current_rx_desc_idx].rd;
+    ETH_rx_wb_desc_t *wb_desc = &dma_rx_desc[current_rx_desc_idx].wb;
 
     // Check that DMA has released this descriptor
     if (wb_desc->status & (0x1<<15))
-        return -1;
+        return NULL;
 
     // Check for timestamp
-    uint8_t clear_ctx_desc = 0;
+    /* uint8_t clear_ctx_desc = 0;
     uint16_t ctx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
-    volatile ETH_rx_ctx_desc_t *ctx_desc = &dma_rx_desc[ctx_desc_idx].ctx;
+    ETH_rx_ctx_desc_t *ctx_desc = &dma_rx_desc[ctx_desc_idx].ctx;
     if ((ctx_desc->ctrl >> 30) == 0x1) { // DMA has released own bit and this descriptor is of context type
         rx_timestamp_sec = ctx_desc->timestamp_high;
         rx_timestamp_nsec = ctx_desc->timestamp_low;
         clear_ctx_desc = 1;
-    }
+    } */
 
-    // If no errors, process packet
+    // If no errors, return pointer to buffer
     if (!(wb_desc->pkt_len & (0x1<<15))){
-        ETH_process_frame(eth_rx_buffer[current_rx_desc_idx]);
+        return eth_rx_buffer[current_rx_desc_idx];
     }
 
+    // Else if errors, return buffer to DMA
+    ETH_free_rx_buffer();
+
+    return NULL;
+}
+
+
+void ETH_free_rx_buffer() {
+    ETH_rx_rd_desc_t *rd_desc = &dma_rx_desc[current_rx_desc_idx].rd;
     // Configure descriptor for receive and release back to DMA
     init_read_descriptor(rd_desc, current_rx_desc_idx);
     // Update current RX descriptor idx
     current_rx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
 
     // Reconfigure context descriptor if it exists
-    if (clear_ctx_desc) {
+    /* if (clear_ctx_desc) {
         // Configure descriptor for receive and release back to DMA
         init_read_descriptor((ETH_rx_rd_desc_t *)ctx_desc, current_rx_desc_idx);
         // Update current RX descriptor idx
         current_rx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
-    }
+    } */
 
     // Update RX descriptor tail pointer;
     WRITE_REG(ETH->DMACRDTPR, (uint32_t)&dma_rx_desc[current_rx_desc_idx]);
-
-    return 0;
 }
 
 
-void ETH_send_frame(uint8_t *buffer, uint16_t length){
+void ETH_send_frame(uint8_t *buffer, uint16_t length) {
     // Send an Ethernet frame using DMA.
 
     // Set up packet descriptor
@@ -132,21 +139,6 @@ void ETH_send_frame(uint8_t *buffer, uint16_t length){
     WRITE_REG(ETH->DMACTDTPR, (uint32_t)&dma_tx_desc[current_tx_desc_idx]);
 }
 
-
-void ETH_process_frame(uint8_t *frame) {
-    eth_header_t *header = (eth_header_t *)frame;
-    uint16_t ethertype = ntohs(header->ethertype);
-    uint8_t *payload = ((uint8_t *)frame + sizeof(eth_header_t));
-
-    switch (ethertype) {
-        case ETHERTYPE_PTP:
-            process_ptp_message(payload);
-            break;
-        case ETHERTYPE_IPv4:
-            process_packet(payload, header);
-            break;
-    }
-}
 
 // Blocking, will return a pointer to the end of the first available TX buffer
 uint8_t* ETH_get_tx_buffer() {
@@ -365,7 +357,7 @@ void ETH_PTP_init() {
     // Enable PTP offloading features
 #define MASTER
 #ifdef MASTER
-    // Automatic PTP Sync messages
+    /* // Automatic PTP Sync messages
     MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);
     MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSMSTRENA_Msk, 1 << ETH_MACTSCR_TSMSTRENA_Pos);
     MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSEVNTENA_Msk, 1 << ETH_MACTSCR_TSEVNTENA_Pos);
@@ -386,7 +378,7 @@ void ETH_PTP_init() {
     WRITE_REG(ETH->MACSPI2R, 0x1234);
 
     // Set automatic sync message period
-    MODIFY_REG(ETH->MACLMIR, ETH_MACLMIR_LSI_Msk, 0 << ETH_MACLMIR_LSI_Pos);
+    MODIFY_REG(ETH->MACLMIR, ETH_MACLMIR_LSI_Msk, 0 << ETH_MACLMIR_LSI_Pos); */
 #else
     // Automatic PTP Sync messages
     MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);
@@ -442,7 +434,7 @@ void ETH_update_PTP_TS_oneshot(const int32_t offset_sec, const int32_t offset_ns
     while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSINIT)); // wait for completion
 }
 
-#include <stdio.h>
+
 void ETH_update_PTP_TS_fine(const int32_t correction) {
     uint32_t new_addend = base_addend + correction;  
     while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));

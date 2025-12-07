@@ -4,10 +4,9 @@
 #include <stdlib.h>
 #include "mcu.h"
 #include "ethernet.h"
-#include "ip.h"
 #include "ptp.h"
 #include "time.h"
-
+#include "network.h"
 
 static uint8_t sync_valid = 0;
 static uint8_t delay_valid = 0;

@@ -37,15 +37,20 @@ void configure_pin(GPIO_TypeDef *GPIO_bank, uint16_t pin, uint32_t mode, uint32_
         if (mode & FALLING_EDGE)
             SET_BIT(EXTI->FTSR1, pin);
 
-        // enable interrupt
-        SET_BIT(EXTI->IMR1, pin);
-
         // convert bank to idx
         uint8_t bank_idx = ((uint32_t)GPIO_bank >> 10) & 0xF;
-
         uint32_t clr_mask = 0xF << ((pin_num & 0x3) * 8);
         uint32_t set_mask = bank_idx << ((pin_num & 0x3) * 8);
-        MODIFY_REG(EXTI->EXTICR[pin_num >> 2U], clr_mask, set_mask);
+        
+        // enable interrupt
+        if (mode & GPIO_MODE_IT) {
+            SET_BIT(EXTI->IMR1, pin);
+            MODIFY_REG(EXTI->EXTICR[pin_num >> 2U], clr_mask, set_mask);
+        }
+        // enable event
+        if (mode & GPIO_MODE_EVT) {
+            SET_BIT(EXTI->EMR1, pin);
+        }
     }
 };
 

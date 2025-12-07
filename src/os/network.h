@@ -1,0 +1,142 @@
+#ifndef NETWORK_H
+#define NETWORK_H
+
+#include <stdint.h>
+#include "mcu.h"
+#include "ethernet.h"
+#include "fifo.h"
+
+
+extern const uint8_t IPv4_ADDR[4];
+
+static inline uint16_t htons(uint16_t data) {
+    return (data >> 8) | (data << 8);
+}
+static inline uint32_t htonl(uint32_t data) {
+    return ((data & 0xFF000000) >> 24) | ((data & 0xFF0000) >> 8) | ((data & 0xFF00) << 8) | ((data & 0xFF) << 24);
+}
+static inline uint64_t htonll(uint64_t data)
+{
+    return ((data & 0x00000000000000FFULL) << 56) |
+           ((data & 0x000000000000FF00ULL) << 40) |
+           ((data & 0x0000000000FF0000ULL) << 24) |
+           ((data & 0x00000000FF000000ULL) << 8)  |
+           ((data & 0x000000FF00000000ULL) >> 8)  |
+           ((data & 0x0000FF0000000000ULL) >> 24) |
+           ((data & 0x00FF000000000000ULL) >> 40) |
+           ((data & 0xFF00000000000000ULL) >> 56);
+}
+static inline uint16_t ntohs(uint16_t data) {
+    return (data >> 8) | (data << 8);
+}
+static inline uint32_t ntohl(uint32_t data) {
+    return ((data & 0xFF000000) >> 24) | ((data & 0xFF0000) >> 8) | ((data & 0xFF00) << 8) | ((data & 0xFF) << 24);
+}
+
+static inline uint32_t pack4byte (uint8_t bytes[4]) {
+    return ((uint32_t)bytes[3]) |
+           ((uint32_t)bytes[2] << 8) |
+           ((uint32_t)bytes[1] << 16) |
+           ((uint32_t)bytes[0] << 24);
+}
+
+
+typedef enum {
+    ETHERTYPE_IPv4  = 0x0800,
+    ETHERTYPE_ARP   = 0x0806,
+    ETHERTYPE_IPv6  = 0x86DD,
+    ETHERTYPE_PTP   = 0x88F7
+} ethertype_t;
+
+typedef enum {
+    IP_PROTO_ICMP        = 1,
+    IP_PROTO_IPv4        = 4,
+    IP_PROTO_TCP         = 6,
+    IP_PROTO_UDP         = 17,
+    IP_PROTO_IPv6        = 41,
+    IP_PROTO_ICMPV6      = 58,
+    IP_PROTO_NONE        = 59,
+    IP_PROTO_RAW         = 255
+} ip_protocol_t;
+
+typedef enum {
+    PORT_NONE          = 0,
+    PORT_SSH           = 22,
+    PORT_TELNET        = 23,
+    PORT_NTP           = 123,
+    PORT_PTP_EVENT     = 319,
+    PORT_PTP_GENERAL   = 320
+} ip_port_t;
+
+typedef enum {
+    ICMP_ECHO_REPLY               = 0,
+    ICMP_DEST_UNREACHABLE         = 3,
+    ICMP_ECHO_REQUEST             = 8,
+    ICMP_ROUTER_ADVERTISEMENT     = 9,
+    ICMP_ROUTER_SOLICITATION      = 10
+} icmp_type_t;
+
+
+typedef struct {
+    uint8_t  dest[6];
+    uint8_t  src[6];
+    uint16_t ethertype;
+} eth_header_t;
+
+typedef struct {
+    uint8_t  version_ihl;
+    uint8_t  tos;
+    uint16_t total_length;
+    uint16_t id;
+    uint16_t flags_fragment;
+    uint8_t  ttl;
+    uint8_t  protocol;
+    uint16_t checksum;
+    uint32_t src_addr;
+    uint32_t dst_addr;
+} ipv4_header_t;
+
+typedef struct {
+    uint8_t  type;
+    uint8_t  code;
+    uint16_t checksum;
+    uint16_t id;
+    uint16_t seq;
+    uint8_t  data[];
+} icmp_header_t;
+
+typedef struct {
+    uint16_t src_port;
+    uint16_t dst_port;
+    uint16_t length;
+    uint16_t checksum;
+    uint8_t  data[];
+} udp_header_t;
+
+
+typedef struct {
+    uint8_t src_mac[6];
+    uint32_t src_ip;
+    uint16_t src_port;
+    uint8_t *payload;
+} udp_socket_t;
+
+void network_init(int priority);
+mFIFO_t *open_socket(ip_protocol_t proto, int port);
+
+void network_receive(void);
+int process_frame(uint8_t *frame);
+
+int process_ipv4(uint8_t *packet, eth_header_t *frame_header);
+
+int process_icmp(icmp_header_t*, ipv4_header_t*, eth_header_t*, uint16_t);
+void process_udp(udp_header_t*, ipv4_header_t*, eth_header_t*, uint16_t);
+
+uint16_t build_ipv4_header(uint8_t *buffer, uint32_t dst_ip, uint16_t payload_len, 
+                           uint8_t protocol, uint16_t id);
+uint16_t build_icmp_reply(uint8_t *buffer, uint16_t id, uint16_t seq_num, 
+                          uint8_t *payload, uint16_t payload_len);
+uint16_t build_udp_header(uint8_t *buffer, uint16_t src_port, uint16_t dst_port, 
+                          uint8_t *data, uint16_t data_len);
+
+#endif // NETWORK_H

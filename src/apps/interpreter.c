@@ -6,7 +6,7 @@
 #include "uart.h"
 #include "schedule.h"
 #include "heap.h"
-#include "ntp.h"
+#include "timeserver.h"
 
 #define HELP_MESSAGE "\
 ### Commands:\r\n\
@@ -29,13 +29,10 @@ static inline void print(char *str){
 void i_help(int argc, char **argv);
 
 void i_get_time(int argc, char **argv) {
-    uint32_t sec;
-    uint32_t frac;
-
     while (1) {
-        get_time(&sec, &frac);
-        uint32_t ns = ((uint64_t)frac * 999999999) / 0x7FFFFFFF;
-        snprintf(strbuf, BUFF_SIZE, "Raw system time: %u.%09u\r", sec, ns);
+        uint64_t ts = get_time();
+        uint32_t ns = ((ts & 0xFFFFFFFF) * 999999999) / 0x7FFFFFFF;
+        snprintf(strbuf, BUFF_SIZE, "Raw system time: %u.%09u\r", (ts >> 32), ns);
         print(strbuf);
         sleep(17);
         
@@ -102,10 +99,10 @@ void interpreter(void) {
     bool match;
 
     print("\x1B[2J\x1B[H"); // clear terminal
-    //print("Enter a command:\r\n");
+    print("Enter a command:\r\n");
     while (1) {
         // get input
-        //print("> ");
+        print("> ");
         uart_in_string_reflect(UART_IDX, strbuf, BUFF_SIZE);
         print("\r\n");
 

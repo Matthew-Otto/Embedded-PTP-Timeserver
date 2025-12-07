@@ -8,9 +8,8 @@
 #include "uart.h"
 #include "gpio.h"
 #include "ethernet.h"
-#include "ip.h"
 
-#include <stdio.h>
+
 
 #define BUFF_SIZE 256
 #define MAX_FIELD_CNT 20
@@ -92,7 +91,7 @@ void parse_nmea_sentence(const char *sentence) {
 
 void gps_init(void) {
     // configure gpio
-    configure_pin(GPIOD, GPIO_PIN_7, GPIO_MODE_IT_RISING, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, 0); // PPS
+    configure_pin(GPIOD, GPIO_PIN_7, GPIO_MODE_IT_RISING | GPIO_MODE_EVT_RISING, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, 0); // PPS
     configure_pin(GPIOD, GPIO_PIN_6, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // RX
     configure_pin(GPIOD, GPIO_PIN_5, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // TX
     configure_pin(GPIOD, GPIO_PIN_4, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // GND
@@ -152,20 +151,20 @@ void gps_timesync(void) {
         }
 
         // BOZO DEBUG
-        printf("\x1B[2J\x1B[H");
+        /* printf("\x1B[2J\x1B[H");
         uint32_t frac = (uint32_t)phase_error_q32;
         double frac_d = (phase_error_q32 > 0) ? frac / 4294967296.0 : (-1 * frac) / 4294967296.0;
         if (phase_error_q32 < 0)
             printf("phase error: -%u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
         else
-            printf("phase error:  %u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
+            printf("phase error:  %u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000)); */
 
 
         int32_t correction = 0;
         // Proportional component
         correction += phase_error_q32 / Kp;
 
-        printf("proportional: %d\r\n", correction); // BOZO DEBUG
+        /* printf("proportional: %d\r\n", correction); // BOZO DEBUG */
 
         // Integral component
         integral_state += phase_error_q32;
@@ -177,9 +176,9 @@ void gps_timesync(void) {
         correction += integral_state / Ki;
 
         // DEBUG BOZO
-        int32_t test = integral_state / Ki;
+        /* int32_t test = integral_state / Ki;
         printf("integral:     %ld\r\n", test);
-        printf("correction:   %d\r\n", correction);
+        printf("correction:   %d\r\n", correction); */
 
         // fine correction
         ETH_update_PTP_TS_fine(correction);
@@ -219,6 +218,9 @@ void EXTI7_IRQHandler(void) {
 
     // combine both timestamps into a single q32.32 value
     pps_ts_q32 = ((int64_t)pps_sec_ts << 32) | (pps_ns_ts << 1);
+
+    // account for interrupt delay (tuned experimentally, not necessarily accurate)
+    pps_ts_q32 -= 780;
 
     if (timing_lock) {
         enable_LED(GREEN_LED);
