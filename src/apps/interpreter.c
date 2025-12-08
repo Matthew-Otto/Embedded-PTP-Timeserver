@@ -31,11 +31,13 @@ void i_help(int argc, char **argv);
 void i_get_time(int argc, char **argv) {
     while (1) {
         uint64_t ts = get_time();
+        uint32_t s = ts >> 32;
         uint32_t ns = ((ts & 0xFFFFFFFF) * 999999999) / 0x7FFFFFFF;
-        snprintf(strbuf, BUFF_SIZE, "Raw system time: %u.%09u\r", (ts >> 32), ns);
+        snprintf(strbuf, BUFF_SIZE, "Raw system time: %u.%09u\r", s, ns);
         print(strbuf);
         sleep(17);
         
+        // wait for ctrl-c
         if (uart_search_for_char_nonblocking(UART_IDX, 0x03)) {
             print("\r\n");
             break;

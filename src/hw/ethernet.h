@@ -8,8 +8,16 @@
 
 extern const uint8_t MACAddr[6];
 
-extern uint32_t rx_timestamp_sec;
-extern uint32_t rx_timestamp_nsec;
+#define DESC_WB_EXT_TS_AVAIL   (0x1 << 14)
+#define DESC_WB_EXT_TS_DROPPED (0x1 << 15)
+#define DESC_WB_STATUS_LAST    (0x1 << 12)
+#define DESC_WB_LEN_ERROR      (0x1 << 15)
+#define DESC_CTX_VALID         (0x3 << 30)
+
+typedef struct pkt_buffer_node {
+    uint8_t *buffer_ptr;
+    struct pkt_buffer_node *next_node;
+} pkt_buffer_node;
 
 typedef struct {
     volatile uint32_t buffer1_addr;
@@ -75,8 +83,7 @@ typedef union {
 
 
 void ETH_IRQHandler(void);
-uint8_t *ETH_receive_frame(void);
-void ETH_free_rx_buffer(void);
+int ETH_receive_frame(uint8_t **frame_ptr, uint64_t *timestamp);
 
 void ETH_send_frame(uint8_t *data, uint16_t length);
 uint8_t* ETH_get_tx_buffer();
@@ -85,5 +92,7 @@ void ETH_update_PTP_TS_oneshot(const int32_t offset_sec, const int32_t offset_ns
 void ETH_update_PTP_TS_fine(const int32_t new_addend);
 void ETH_init(semaphore_t *eth_rx_semaphore);
 
+uint8_t *ETH_alloc_pkt_buff(void);
+void ETH_free_pkt_buff(uint8_t *ptr);
 
 #endif // ETH_H

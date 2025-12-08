@@ -36,6 +36,7 @@ void timeserver(void) {
 
         ntp_packet_t *request = (ntp_packet_t *)socket->payload;
 
+        response.ref_ts = request->tx_ts - (5ULL<<30); // BOZO TODO make this real
         response.orig_ts = request->tx_ts;
         response.rx_ts = htonll(get_ntp_time());
         response.tx_ts = htonll(get_ntp_time());

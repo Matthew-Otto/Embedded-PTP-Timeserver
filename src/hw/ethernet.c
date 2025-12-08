@@ -11,27 +11,57 @@
 const uint8_t MACAddr[6] = {0x00,0x80,0xE1,0x00,0x00,0x00};
 
 #define BUFFER_SIZE 1524
+#define PKT_BUFFER_CNT 10
 #define RX_DSC_CNT 8
 #define TX_DSC_CNT 8
 
 // Global variables
-uint32_t rx_timestamp_sec;
-uint32_t rx_timestamp_nsec;
 uint32_t base_addend;
 
+// packet buffer
+__attribute__((section(".eth_pkt_buffer")))
+static uint8_t eth_pkt_buffer[PKT_BUFFER_CNT][BUFFER_SIZE];
+
 // Local (static) variables
-__attribute__((section(".eth_rx_buffer")))
-static uint8_t eth_rx_buffer[RX_DSC_CNT][BUFFER_SIZE];
+// TODO transmit from the main packet buffer
 __attribute__((section(".eth_tx_buffer")))
 static uint8_t eth_tx_buffer[TX_DSC_CNT][BUFFER_SIZE];
 
-volatile static ETH_rx_desc_u dma_rx_desc[RX_DSC_CNT];
-volatile static ETH_tx_desc_u dma_tx_desc[TX_DSC_CNT];
+static ETH_rx_desc_u dma_rx_desc[RX_DSC_CNT];
+static uint8_t *dma_rx_block_ptr[RX_DSC_CNT];
+
+static ETH_tx_desc_u dma_tx_desc[TX_DSC_CNT];
 static uint32_t current_rx_desc_idx = 0;
 static uint32_t current_tx_desc_idx = 0;
 static uint32_t current_tx_buffer_idx = 0;
 
 static semaphore_t *rx_semaphore;
+
+
+// BOZO move this
+
+static uint8_t *free_block_root;
+
+void ETH_pkt_buff_init(void) {
+    free_block_root = eth_pkt_buffer[0];
+    for (int i = 0; i < PKT_BUFFER_CNT - 1; i++) {
+        *(uintptr_t *)eth_pkt_buffer[i] = (uintptr_t)eth_pkt_buffer[i+1];
+    }
+    *(uintptr_t *)eth_pkt_buffer[PKT_BUFFER_CNT] = (uintptr_t)NULL;
+}
+
+uint8_t *ETH_alloc_pkt_buff(void) {
+    uint8_t *block = free_block_root;
+    free_block_root = (uint8_t *)*(uintptr_t *)free_block_root;
+    return block;
+}
+
+void ETH_free_pkt_buff(uint8_t *ptr) {
+    *(uintptr_t *)ptr = (uintptr_t)free_block_root;
+    free_block_root = ptr;
+}
+
+// end BOZO
 
 
 // Forward declarations
@@ -68,53 +98,58 @@ void ETH_IRQHandler(void) {
 
 // Checks for valid RX descriptors
 // If one exists, process it before resetting DMA descriptor
-uint8_t *ETH_receive_frame(){
-    ETH_rx_rd_desc_t *rd_desc = &dma_rx_desc[current_rx_desc_idx].rd;
+int ETH_receive_frame(uint8_t **frame_ptr, uint64_t *timestamp) {
+    bool frame_desc = false;
+    bool timestamp_desc = false;
     ETH_rx_wb_desc_t *wb_desc = &dma_rx_desc[current_rx_desc_idx].wb;
 
     // Check that DMA has released this descriptor
     if (wb_desc->status & (0x1<<15))
-        return NULL;
-
-    // Check for timestamp
-    /* uint8_t clear_ctx_desc = 0;
-    uint16_t ctx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
-    ETH_rx_ctx_desc_t *ctx_desc = &dma_rx_desc[ctx_desc_idx].ctx;
-    if ((ctx_desc->ctrl >> 30) == 0x1) { // DMA has released own bit and this descriptor is of context type
-        rx_timestamp_sec = ctx_desc->timestamp_high;
-        rx_timestamp_nsec = ctx_desc->timestamp_low;
-        clear_ctx_desc = 1;
-    } */
+        return -1;
 
     // If no errors, return pointer to buffer
-    if (!(wb_desc->pkt_len & (0x1<<15))){
-        return eth_rx_buffer[current_rx_desc_idx];
+    if (!(wb_desc->pkt_len & DESC_WB_LEN_ERROR)){
+        *frame_ptr = dma_rx_block_ptr[current_rx_desc_idx];
+        frame_desc = true;
     }
 
-    // Else if errors, return buffer to DMA
-    ETH_free_rx_buffer();
+    // Check for timestamp
+    if ((wb_desc->status & DESC_WB_STATUS_LAST) && (wb_desc->ext_stat & DESC_WB_EXT_TS_AVAIL) && !(wb_desc->ext_stat & DESC_WB_EXT_TS_DROPPED)) {
+        uint16_t ctx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
+        ETH_rx_ctx_desc_t *ctx_desc = &dma_rx_desc[ctx_desc_idx].ctx;
 
-    return NULL;
-}
+        // DMA has released own bit and this descriptor is of context type
+        if ((ctx_desc->ctrl & DESC_CTX_VALID) == DESC_CTX_VALID) { 
+            *timestamp = (uint64_t)ctx_desc->timestamp_high << 32 | ctx_desc->timestamp_low;
+            ETH_free_pkt_buff(dma_rx_block_ptr[ctx_desc_idx]);
+            timestamp_desc = true;
+        }
+    }
 
-
-void ETH_free_rx_buffer() {
-    ETH_rx_rd_desc_t *rd_desc = &dma_rx_desc[current_rx_desc_idx].rd;
-    // Configure descriptor for receive and release back to DMA
-    init_read_descriptor(rd_desc, current_rx_desc_idx);
-    // Update current RX descriptor idx
-    current_rx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
-
-    // Reconfigure context descriptor if it exists
-    /* if (clear_ctx_desc) {
+    if (frame_desc) {
         // Configure descriptor for receive and release back to DMA
-        init_read_descriptor((ETH_rx_rd_desc_t *)ctx_desc, current_rx_desc_idx);
+        init_read_descriptor((ETH_rx_rd_desc_t *)wb_desc, current_rx_desc_idx);
         // Update current RX descriptor idx
         current_rx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
-    } */
+    }
+
+    if (timestamp_desc) {
+        // Configure descriptor for receive and release back to DMA
+        ETH_rx_rd_desc_t *ctx_desc = &dma_rx_desc[current_rx_desc_idx].rd;
+        init_read_descriptor(ctx_desc, current_rx_desc_idx);
+        // Update current RX descriptor idx
+        current_rx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
+    }
 
     // Update RX descriptor tail pointer;
     WRITE_REG(ETH->DMACRDTPR, (uint32_t)&dma_rx_desc[current_rx_desc_idx]);
+
+    if (frame_desc) {
+        if (timestamp_desc) return 1;
+        else                return 0;
+    } else {
+        return -1;
+    }
 }
 
 
@@ -170,6 +205,7 @@ void ETH_init(semaphore_t *eth_rx_semaphore) {
     ETH_IO_init();
     ETH_PHY_init();
     ETH_MAC_init();
+    ETH_pkt_buff_init();
     ETH_DMA_init();
     ETH_int_init();
     ETH_PTP_init();
@@ -182,6 +218,19 @@ void ETH_init(semaphore_t *eth_rx_semaphore) {
     // Enable MAC transmitter and receiver
     SET_BIT(ETH->MACCR, ETH_MACCR_TE);
     SET_BIT(ETH->MACCR, ETH_MACCR_RE);
+
+
+    // BOZO DEBUG
+    /* uint8_t *x = ETH_alloc_pkt_buff();
+    uint8_t *y = ETH_alloc_pkt_buff();
+    uint8_t *z = ETH_alloc_pkt_buff();
+    uint8_t *a = ETH_alloc_pkt_buff();
+    uint8_t *b = ETH_alloc_pkt_buff();
+    uint8_t *c = ETH_alloc_pkt_buff();
+    ETH_free_pkt_buff(z);
+    ETH_free_pkt_buff(b);
+
+    volatile int zzz = 9; */
 }
 
 
@@ -283,7 +332,8 @@ void ETH_MAC_init(void) {
 
 static inline void init_read_descriptor(volatile ETH_rx_rd_desc_t *desc, uint16_t idx) {
     // Configure descriptor for receive and release back to DMA
-    desc->buffer1_addr = (uint32_t)eth_rx_buffer[idx];
+    dma_rx_block_ptr[idx] = ETH_alloc_pkt_buff(); // TODO BOZO handle no allocation
+    desc->buffer1_addr = (uint32_t)dma_rx_block_ptr[idx];
     desc->status = 0xC1; // set own bit , enable interrupt, and buffer1_valid
 }
 
@@ -301,7 +351,7 @@ void ETH_DMA_init(void) {
         init_read_descriptor(desc, i);
     }
     // Set Receive Buffers Length
-    MODIFY_REG(ETH->DMACRCR, ETH_DMACRCR_RBSZ, BUFFER_SIZE << 1);
+    MODIFY_REG(ETH->DMACRCR, ETH_DMACRCR_RBSZ, BUFFER_SIZE << ETH_DMACRCR_RBSZ_Pos);
     // Set Receive Descriptor Ring Length
     WRITE_REG(ETH->DMACRDRLR, RX_DSC_CNT-1);
     // Set Receive Descriptor List Address

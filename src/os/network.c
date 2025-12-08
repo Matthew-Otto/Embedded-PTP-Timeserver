@@ -28,7 +28,7 @@ mFIFO_t *open_socket(ip_protocol_t proto, int port) {
 
 
 void network_init(int priority) {
-    SRC_IPv4_ADDR = htonl(pack4byte(IPv4_ADDR));
+    SRC_IPv4_ADDR = pack4byte(IPv4_ADDR);
 
     init_semaphore(&eth_rx_semaphore, 0);
     ETH_init(&eth_rx_semaphore);
@@ -46,16 +46,17 @@ void network_init(int priority) {
 ///////////////////////////////////////////////////////////////////////////////
 
 void network_receive(void) {
+    uint8_t *frame_ptr;
+    uint64_t timestamp;
     while (1) {
         // counting semaphore, receive packets until no more are ready
         c_wait(&eth_rx_semaphore);
 
-        uint8_t *frame_ptr = ETH_receive_frame();
-        int rc = process_frame(frame_ptr);
-        if (rc < 0) {
-            // return rx buffer to dma immediately
-            ETH_free_rx_buffer();
-        }
+        int rc = 0;
+        rc = ETH_receive_frame(&frame_ptr, &timestamp);
+        rc = process_frame(frame_ptr);
+        // free packet buffer (BOZO only on valid frameptr)
+        ETH_free_pkt_buff(frame_ptr);
     }
 }
 

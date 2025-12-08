@@ -9,35 +9,17 @@
 
 extern const uint8_t IPv4_ADDR[4];
 
-static inline uint16_t htons(uint16_t data) {
-    return (data >> 8) | (data << 8);
-}
-static inline uint32_t htonl(uint32_t data) {
-    return ((data & 0xFF000000) >> 24) | ((data & 0xFF0000) >> 8) | ((data & 0xFF00) << 8) | ((data & 0xFF) << 24);
-}
-static inline uint64_t htonll(uint64_t data)
-{
-    return ((data & 0x00000000000000FFULL) << 56) |
-           ((data & 0x000000000000FF00ULL) << 40) |
-           ((data & 0x0000000000FF0000ULL) << 24) |
-           ((data & 0x00000000FF000000ULL) << 8)  |
-           ((data & 0x000000FF00000000ULL) >> 8)  |
-           ((data & 0x0000FF0000000000ULL) >> 24) |
-           ((data & 0x00FF000000000000ULL) >> 40) |
-           ((data & 0xFF00000000000000ULL) >> 56);
-}
-static inline uint16_t ntohs(uint16_t data) {
-    return (data >> 8) | (data << 8);
-}
-static inline uint32_t ntohl(uint32_t data) {
-    return ((data & 0xFF000000) >> 24) | ((data & 0xFF0000) >> 8) | ((data & 0xFF00) << 8) | ((data & 0xFF) << 24);
-}
+#define htons(x) __builtin_bswap16(x)
+#define htonl(x) __builtin_bswap32(x)
+#define htonll(x) __builtin_bswap64(x)
+#define ntohs(x) __builtin_bswap16(x)
+#define ntohl(x) __builtin_bswap32(x)
+#define ntohll(x) __builtin_bswap64(x)
 
-static inline uint32_t pack4byte (uint8_t bytes[4]) {
-    return ((uint32_t)bytes[3]) |
-           ((uint32_t)bytes[2] << 8) |
-           ((uint32_t)bytes[1] << 16) |
-           ((uint32_t)bytes[0] << 24);
+static inline uint32_t pack4byte (const uint8_t bytes[4]) {
+    uint32_t v;
+    __builtin_memcpy(&v, bytes, sizeof(v));
+    return v;
 }
 
 
