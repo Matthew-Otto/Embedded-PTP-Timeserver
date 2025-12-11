@@ -10,8 +10,12 @@ void init_sysclk(void) {
     while (READ_BIT(PWR->VOSSR, PWR_VOSSR_VOSRDY) != PWR_VOSSR_VOSRDY);
 
     // Set HSE bypass
-    SET_BIT(RCC->CR, RCC_CR_HSEBYP);
-    CLEAR_BIT(RCC->CR, RCC_CR_HSEEXT);
+    //SET_BIT(RCC->CR, RCC_CR_HSEBYP);
+    //CLEAR_BIT(RCC->CR, RCC_CR_HSEEXT);
+    
+    // Disable HSE bypass
+    CLEAR_BIT(RCC->CR, RCC_CR_HSEBYP);
+    // Enable HSE
     SET_BIT(RCC->CR, RCC_CR_HSEON);
     // Wait for HSE ready
     while (READ_BIT(RCC->CR, RCC_CR_HSERDY) == 0U);
@@ -23,11 +27,11 @@ void init_sysclk(void) {
 
     // Configure the PLL1 clock source, multiplication and division factors.
     uint32_t PLLSource = (RCC_PLL1CFGR_PLL1SRC_0 | RCC_PLL1CFGR_PLL1SRC_1);
-    uint32_t PLLM = 4;
-    uint32_t PLLN = 250;
-    uint32_t PLLP = 2;
-    uint32_t PLLQ = 2;
-    uint32_t PLLR = 2;
+    uint32_t PLLM = 1;   // pre-div1
+    uint32_t PLLN = 20; // mult
+    uint32_t PLLP = 2;   // post-div
+    uint32_t PLLQ = 2;   // post-div
+    uint32_t PLLR = 2;   // post-div
     MODIFY_REG(RCC->PLL1CFGR, (RCC_PLL1CFGR_PLL1SRC | RCC_PLL1CFGR_PLL1M), (PLLSource << RCC_PLL1CFGR_PLL1SRC_Pos) |
             (PLLM << RCC_PLL1CFGR_PLL1M_Pos));
     WRITE_REG(RCC->PLL1DIVR , (((PLLN - 1U ) & RCC_PLL1DIVR_PLL1N) | (((PLLP - 1U ) << RCC_PLL1DIVR_PLL1P_Pos) & RCC_PLL1DIVR_PLL1P) | 
@@ -35,10 +39,10 @@ void init_sysclk(void) {
 
     // Disable PLL1FRACN
     CLEAR_BIT(RCC->PLL1CFGR, RCC_PLL1CFGR_PLL1FRACEN);
-    // Configure PLL PLL1FRACN
-    WRITE_REG(RCC->PLL1FRACR, 1968 << RCC_PLL1FRACR_PLL1FRACN_Pos);
+    // Configure PLL PLL1FRACR
+    //WRITE_REG(RCC->PLL1FRACR, 1968 << RCC_PLL1FRACR_PLL1FRACN_Pos);
     // Enable PLL1FRACN
-    SET_BIT(RCC->PLL1CFGR, RCC_PLL1CFGR_PLL1FRACEN);
+    //SET_BIT(RCC->PLL1CFGR, RCC_PLL1CFGR_PLL1FRACEN);
     // Select PLL1 input reference frequency range: VCI
     MODIFY_REG(RCC->PLL1CFGR, RCC_PLL1CFGR_PLL1RGE, RCC_PLL1CFGR_PLL1RGE_0);
     // Select PLL1 output frequency range : VCO
