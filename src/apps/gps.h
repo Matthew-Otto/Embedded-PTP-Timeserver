@@ -13,9 +13,10 @@ typedef struct {
     int fix_valid;
 } gps_data_t;
 
+extern bool timing_lock;
 
 void gps_timesync(void);
 
-void EXTI7_IRQHandler(void);
+void TIM3_IRQHandler(void);
 
 #endif // GPS_H

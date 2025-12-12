@@ -7,11 +7,12 @@
 #include "schedule.h"
 #include "heap.h"
 #include "timeserver.h"
+#include "gps.h"
 
 #define HELP_MESSAGE "\
 ### Commands:\r\n\
 help:           print this message\r\n\
-time [reset]:   print (or reset) the current system time\r\n\
+time [reset]:   print the current system time\r\n\
 stats:          print various OS diagnostics\r\n\
 \r\n"
 
@@ -28,12 +29,14 @@ static inline void print(char *str){
 
 void i_help(int argc, char **argv);
 
+extern bool timing_lock;
 void i_get_time(int argc, char **argv) {
     while (1) {
         uint64_t ts = get_time();
         uint32_t s = ts >> 32;
-        uint32_t ns = ((ts & 0xFFFFFFFF) * 999999999) / 0x7FFFFFFF;
-        snprintf(strbuf, BUFF_SIZE, "Raw system time: %u.%09u\r", s, ns);
+        uint32_t ns = ((ts & 0xFFFFFFFF) * 999999999) >> 32;
+        char *status = timing_lock ? "locked  " : "unlocked";
+        snprintf(strbuf, BUFF_SIZE, "GPS: %s\r\nRaw system time: %u.%09u\r\033[A", status, s, ns);
         print(strbuf);
         sleep(17);
         

@@ -91,7 +91,7 @@ void ETH_IRQHandler(void) {
     }
 
     // clear all DMA interrupt bits
-    // The interrupt is cleared only when all the bits of interrupt status register (ETH_DMAISR) are cleared.
+    // The interrupt is cleared only when every bit of the interrupt status register (ETH_DMAISR) is cleared.
     WRITE_REG(ETH->DMACSR, 0xFFFFFFFF);
 }
 
@@ -218,19 +218,6 @@ void ETH_init(semaphore_t *eth_rx_semaphore) {
     // Enable MAC transmitter and receiver
     SET_BIT(ETH->MACCR, ETH_MACCR_TE);
     SET_BIT(ETH->MACCR, ETH_MACCR_RE);
-
-
-    // BOZO DEBUG
-    /* uint8_t *x = ETH_alloc_pkt_buff();
-    uint8_t *y = ETH_alloc_pkt_buff();
-    uint8_t *z = ETH_alloc_pkt_buff();
-    uint8_t *a = ETH_alloc_pkt_buff();
-    uint8_t *b = ETH_alloc_pkt_buff();
-    uint8_t *c = ETH_alloc_pkt_buff();
-    ETH_free_pkt_buff(z);
-    ETH_free_pkt_buff(b);
-
-    volatile int zzz = 9; */
 }
 
 
@@ -461,6 +448,10 @@ void ETH_PTP_init() {
 
     // Enable timestamp interrupt
     //SET_BIT(ETH->MACIER, ETH_MACIER_TSIE);
+
+    // Enable auxiliary snapshots
+    // ATSEN1 = TIM3 TRGO
+    WRITE_REG(ETH->MACACR, ETH_MACACR_ATSEN1);
 }
 
 

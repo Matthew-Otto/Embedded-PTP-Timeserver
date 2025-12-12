@@ -47,7 +47,6 @@ void reset_handler(void) {
     // initialize HW
     init_sysclk();
     //init_watchdog();
-    init_fpu();
     init_timer();
     GPIO_init();
 

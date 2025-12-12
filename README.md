@@ -27,14 +27,19 @@ The Ethernet MAC contains a hardware timer used to timestamp PTP packets as they
 
 ### GPS
 
-UTC time is received via GPS module (I use a ublox LEA-5T) over serial (USART2). Current system time is sampled in an interrupt triggered by a PPS signal from GPS. The frequency divider driving the system timer is then adjusted using a PI controller to smoothly align the system time to UTC time.
+UTC time is received via GPS module (I use a ublox LEA-5T) over serial (USART2). The PPS signal triggers a snapshot of the PTP timestamp timers which are used to calculate the current time offset. The frequency divider driving the system timer is then adjusted using a PI controller to smoothly align the system time to UTC time.
 
-![sync ack gif](figures/sync_lock.gif)
-
-A demo of the system time synchronizing with GPS. The yellow trace is the PPS reference from GPS. The blue trace is the PPS signal originating in the Ethernet MAC.
+![sync ack gif](figures/sync_lock.gif)\
+*A demo of the system time synchronizing with GPS. The yellow trace is the PPS reference from GPS. The blue trace is the PPS signal originating in the Ethernet MAC. The components of the PI controller can be seen in the bottom right.*
 
 The frequency drift of the main clock (and maybe also the GPS receiver) is quite noticeable at steady-state.
 
+
+![steady state drift gif](figures/steady_state.gif)\
+*Clock drift at steady state (10x speed)*
+
+
+This data was collected with a piece of foam covering the MCU and external XO. I think a large amount of the drift is caused by trying to use GPS indoors and not a bad crystal oscillator.
 
 ### Networking (Ethernet)
 
@@ -58,6 +63,20 @@ This interpreter exposes various OS statistics and information on the running ap
 ---
 
 ## Implementation details (under construction)
+
+### Configuring System Clock
+
+To use on-board high speed crystal oscillator:
+Add solder to bridges SB3 and SB4
+remove solder bridge from SB49
+
+TODO:
+configure PLL with M,N,P/Q/R as 1,20,2 respectively
+
+### configuring PTP timer snapshots (TODO)
+
+configure gpio pin connected to GPS PPS as event source for timer 3
+have timer3 trigger output event to trigger ethernet ptp timestamp
 
 ### Tuning PI(D) controller
 The proportional component should be as large as possible without causing oscillations. This is fairly easy to tune by disabling all the other components and plotting the error over time. However, I found that I was able to increase the proportional gain after including the integral component.

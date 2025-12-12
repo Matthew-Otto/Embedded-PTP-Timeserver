@@ -9,6 +9,7 @@
 #include "gpio.h"
 #include "ethernet.h"
 
+// BOZO DEBUG
 #include <stdio.h>
 
 #define BUFF_SIZE 256
@@ -21,8 +22,8 @@ static semaphore_t nmea_burst_sync;
 static gps_data_t gps_data;
 static int64_t pps_ts_q32;
 
-static bool timing_lock = 0;
 static int sync_cnt = 0;
+bool timing_lock = 0;
 
 
 
@@ -88,24 +89,36 @@ void parse_nmea_sentence(const char *sentence) {
 }
 
 
-
 void gps_init(void) {
     // configure gpio
-    configure_pin(GPIOD, GPIO_PIN_7, GPIO_MODE_IT_RISING | GPIO_MODE_EVT_RISING, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, 0); // PPS
     configure_pin(GPIOD, GPIO_PIN_6, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // RX
     configure_pin(GPIOD, GPIO_PIN_5, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF7_USART2); // TX
-    configure_pin(GPIOD, GPIO_PIN_4, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // GND
-    configure_pin(GPIOD, GPIO_PIN_3, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0); // VCC
+    configure_pin(GPIOD, GPIO_PIN_2, GPIO_MODE_AF_PP, GPIO_PULLDOWN, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF2_TIM3); // PPS
 
+    // configures GPS PPS connected to GPIO pin to trigger TIM3 event then then immediately triggers ETH PTP timestamp snapshot
+    // enable TIM3 peripheral clock
+    SET_BIT(RCC->APB1LENR, RCC_APB1LENR_TIM3EN);
+    (void)READ_BIT(RCC->APB1LENR, RCC_APB1LENR_TIM3EN);
 
-    // power on gps via gpio pins
-    //GPIOD->BSRR = (uint32_t)GPIO_PIN_4 << 16; // set gps gnd pin low
-    //GPIOD->BSRR = (uint32_t)GPIO_PIN_3; // set gps vcc pin high
-    
+    // Enable one pulse mode
+    SET_BIT(TIM3->CR1, TIM_CR1_OPM);
 
-    // configure pps interrupt
-    NVIC_SetPriority(EXTI7_IRQn, 0);
-    NVIC_EnableIRQ(EXTI7_IRQn);
+    // Set master mode to reset
+    MODIFY_REG(TIM3->CR2, TIM_CR2_MMS_Msk, 0);
+    // Set slave mode to reset
+    MODIFY_REG(TIM3->SMCR, TIM_SMCR_SMS_Msk, 0b100 << TIM_SMCR_SMS_Pos);
+    // Set trigger selection to external trigger input (tim_etrf)
+    MODIFY_REG(TIM3->SMCR, TIM_SMCR_TS_Msk, 0b111 << TIM_SMCR_TS_Pos);
+
+    // enable timer
+    SET_BIT(TIM3->CR1, TIM_CR1_CEN);
+
+    // enable timer interrupt
+    WRITE_REG(TIM3->SR, 0); // clear any interrupts
+    SET_BIT(TIM3->DIER, TIM_DIER_UIE); // enable TIM3 update interrupt
+
+    NVIC_SetPriority(TIM3_IRQn, 1);
+    NVIC_EnableIRQ(TIM3_IRQn);
 }
 
 
@@ -153,20 +166,20 @@ void gps_timesync(void) {
         }
 
         // BOZO DEBUG
-        printf("\x1B[2J\x1B[H");
+        /* printf("\x1B[2J\x1B[H");
         uint32_t frac = (uint32_t)phase_error_q32;
         double frac_d = (phase_error_q32 > 0) ? frac / 4294967296.0 : (-1 * frac) / 4294967296.0;
         if (phase_error_q32 < 0)
             printf("phase error: -%u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
         else
-            printf("phase error:  %u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000));
+            printf("phase error:  %u.%09u s\r\n", phase_error_int, (unsigned)(frac_d * 1000000000)); */
 
 
         int32_t correction = 0;
         // Proportional component
         correction += phase_error_q32 / Kp;
 
-        printf("proportional: %d\r\n", correction); // BOZO DEBUG */
+        //printf("proportional: %d\r\n", correction); // BOZO DEBUG */
 
         // Integral component
         integral_state += phase_error_q32;
@@ -178,9 +191,9 @@ void gps_timesync(void) {
         correction += integral_state / Ki;
 
         // DEBUG BOZO
-        int32_t test = integral_state / Ki;
-        printf("integral:     %ld\r\n", test);
-        printf("correction:   %d\r\n", correction);
+        //int32_t test = integral_state / Ki;
+        //printf("integral:     %ld\r\n", test);
+        //printf("correction:   %d\r\n", correction);
 
         // fine correction
         ETH_update_PTP_TS_fine(correction);
@@ -203,26 +216,17 @@ void gps_timesync(void) {
     }
 }
 
-void EXTI7_IRQHandler(void) {
-    uint32_t pps_ns_ts = READ_REG(ETH->MACSTNR);
-    uint32_t pps_sec_ts = READ_REG(ETH->MACSTSR);
-    uint32_t pps_ns_ts2 = READ_REG(ETH->MACSTNR);
-    uint32_t pps_sec_ts2 = READ_REG(ETH->MACSTSR);
+void TIM3_IRQHandler(void) {
+    WRITE_REG(TIM3->SR, 0); // ack interrupt
+
+    uint32_t aux_stat = READ_REG(ETH->MACTSSR);
+    if ((aux_stat & ETH_MACTSSR_AUXTSTRIG)) {        
+        uint32_t pps_sec_ts = READ_REG(ETH->MACATSSR);
+        uint32_t pps_ns_ts = READ_REG(ETH->MACATSNR);
     
-    // if roll over occurred during read
-    bool rollover_occurred = pps_ns_ts2 < pps_ns_ts;
-    // if the sec_ts value matches the value of MACSTSR after rollover, it was sampled after rollover
-    bool sampled_after_rollover = pps_sec_ts == pps_sec_ts2;
-
-    if (rollover_occurred && sampled_after_rollover) {
-        pps_sec_ts -= 1;
+        // combine both timestamps into a single q32.32 value
+        pps_ts_q32 = ((int64_t)pps_sec_ts << 32) | (pps_ns_ts << 1);
     }
-
-    // combine both timestamps into a single q32.32 value
-    pps_ts_q32 = ((int64_t)pps_sec_ts << 32) | (pps_ns_ts << 1);
-
-    // account for interrupt delay (tuned experimentally, not necessarily accurate)
-    pps_ts_q32 -= 780;
 
     if (timing_lock) {
         enable_LED(GREEN_LED);
@@ -230,7 +234,4 @@ void EXTI7_IRQHandler(void) {
 
     // signal gps_timesync task to read NMEA data
     b_signal(&nmea_burst_sync);
-
-    // ack interrupt
-    SET_BIT(EXTI->RPR1, 0x1 << 7);
 }

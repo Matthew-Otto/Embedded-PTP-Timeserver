@@ -1,6 +1,7 @@
 #include "mcu.h"
 #include "timer.h"
 #include "schedule.h"
+#include "gpio.h"
 
 
 // initialize main system timer (TIM2)

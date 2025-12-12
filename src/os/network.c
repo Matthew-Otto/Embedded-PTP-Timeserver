@@ -120,6 +120,8 @@ int process_icmp(icmp_header_t *icmp, ipv4_header_t *ip_pkt, eth_header_t *frame
 void process_udp(udp_header_t *packet, ipv4_header_t *ip_header, eth_header_t *frame_header, uint16_t pkt_len) {
     uint16_t port = ntohs(packet->dst_port);
 
+    if (port > 1024) return;
+
     mFIFO_t *socket_buffer = upd_port_map[port];
 
     if (socket_buffer) {
