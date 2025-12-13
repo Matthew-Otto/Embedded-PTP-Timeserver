@@ -7,7 +7,12 @@
 #include "fifo.h"
 #include "malloc.h"
 
-const uint8_t IPv4_ADDR[4] = {10, 1, 123, 1};
+#ifdef BACKUP
+const uint8_t IPv4_ADDR[4] = {10, 0, 123, 2};
+#else
+const uint8_t IPv4_ADDR[4] = {10, 0, 123, 3};
+#endif
+
 static uint32_t SRC_IPv4_ADDR;
 
 static semaphore_t eth_rx_semaphore;

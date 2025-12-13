@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "timeserver.h"
 #include "network.h"
+#include "gps.h"
 #include "fifo.h"
 #include "heap.h"
 
@@ -11,19 +12,17 @@
 #define UNLOCKED_LVM    0xE4
 #define LOCKED_LVM      0x24
 #define STRATUM         1
-#define POLL            0
-#define PRECISION       -21
+#define PRECISION       -23
 #define ROOT_DELAY      0
-#define ROOT_DISPERSION 0x1
+#define ROOT_DISPERSION 1
 #define REF_ID          0x00535047 // "GPS"
 
 static ntp_packet_t response = {
     .li_vn_mode = LOCKED_LVM,
     .stratum = STRATUM,
-    .poll = POLL,
     .precision = PRECISION,
-    .root_delay = ROOT_DELAY,
-    .root_dispersion = ROOT_DISPERSION,
+    .root_delay = htonl(ROOT_DELAY),
+    .root_dispersion = htonl(ROOT_DISPERSION),
     .ref_id = REF_ID,
 };
 
@@ -33,13 +32,20 @@ void timeserver(void) {
     udp_socket_t *socket;
     while (true) {
         mfifo_get(socket_buffer, &socket);
+        uint64_t rx_time = get_time();
 
         ntp_packet_t *request = (ntp_packet_t *)socket->payload;
 
-        response.ref_ts = request->tx_ts - (5ULL<<30); // BOZO TODO make this real
+        if (timing_lock)
+            response.li_vn_mode = LOCKED_LVM;
+        else
+            response.li_vn_mode = UNLOCKED_LVM;
+
+        response.poll = request->poll;
+        response.ref_ts = htonll(utc_to_ntp(last_sync_ts));
         response.orig_ts = request->tx_ts;
-        response.rx_ts = htonll(get_ntp_time());
-        response.tx_ts = htonll(get_ntp_time());
+        response.rx_ts = htonll(utc_to_ntp(rx_time));
+        response.tx_ts = htonll(utc_to_ntp(get_time()));
 
         // send response
         uint8_t *buffer = ETH_get_tx_buffer();
@@ -77,7 +83,7 @@ uint64_t get_time(void) {
     return ((uint64_t)sec_ts << 32) | (ns_ts << 1);
 }
 
-uint64_t get_ntp_time(void) {
-    uint64_t unix_ts = get_time();
-    return unix_ts + NTP_TIMESTAMP_DELTA;
+uint64_t utc_to_ntp(uint64_t utc_ts) {
+    return utc_ts + NTP_TIMESTAMP_DELTA;
 }
+

@@ -20,10 +20,11 @@ static char strbuf[BUFF_SIZE];
 
 static semaphore_t nmea_burst_sync;
 static gps_data_t gps_data;
-static int64_t pps_ts_q32;
+static uint64_t pps_ts_q32;
 
 static int sync_cnt = 0;
 bool timing_lock = 0;
+uint64_t last_sync_ts;
 
 
 
@@ -124,8 +125,14 @@ void gps_init(void) {
 
 void gps_timesync(void) {
     gps_init();
-    init_uart(UART_IDX, 115200, 256, 3);
     init_semaphore(&nmea_burst_sync, 1);
+    
+#ifdef BACKUP
+    init_uart(UART_IDX, 9600, 256, 3);
+    uart_out_string(UART_IDX, "$PUBX,40,ZDA,0,1,0,0*45\r\n");
+#else
+    init_uart(UART_IDX, 115200, 256, 3);
+#endif
 
     enable_LED(RED_LED);
 
@@ -203,6 +210,7 @@ void gps_timesync(void) {
         if (abs(phase_error_q32) < 430) { // < ~100ns
             if (sync_cnt > 5) {
                 timing_lock = true;
+                last_sync_ts = pps_ts_q32;
                 disable_LED(YELLOW_LED);
             } else {
                 sync_cnt++;

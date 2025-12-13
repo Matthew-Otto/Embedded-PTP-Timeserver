@@ -42,7 +42,7 @@ void i_get_time(int argc, char **argv) {
         
         // wait for ctrl-c
         if (uart_search_for_char_nonblocking(UART_IDX, 0x03)) {
-            print("\r\n");
+            print("\r\n\n");
             break;
         }
     }

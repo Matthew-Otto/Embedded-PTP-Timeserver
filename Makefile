@@ -2,10 +2,6 @@ SRC_DIR = ./src/
 BUILD_DIR = ./build/
 BIN_DIR = ./bin/
 
-# find with st-info --probe
-MASTER_SERIAL = 001C00453234511637333934
-SLAVE_SERIAL = 004500243234511637333934
-
 # UTILITY VARIABLES
 AS = arm-none-eabi-as
 CC = arm-none-eabi-gcc
@@ -82,12 +78,10 @@ flash: $(BIN)
 
 
 # For multi-board setups
-flash-master:
-	make CFLAGS="$(CFLAGS) -DMASTER" SERIAL="$(MASTER_SERIAL)" flash-serial
+flash-backup:
+	make CFLAGS="$(CFLAGS) -DBACKUP" flash
 
-flash-slave:
-	make CFLAGS="$(CFLAGS)" SERIAL="$(SLAVE_SERIAL)" flash-serial
-
+# find serial with st-info --probe
 flash-serial: $(BIN)
 	openocd -f interface/stlink-dap.cfg -c "adapter serial $(SERIAL)" \
 	-f target/stm32h5x.cfg \

@@ -14,6 +14,7 @@ typedef struct {
 } gps_data_t;
 
 extern bool timing_lock;
+extern uint64_t last_sync_ts;
 
 void gps_timesync(void);
 
