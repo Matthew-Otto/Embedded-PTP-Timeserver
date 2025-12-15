@@ -31,45 +31,58 @@ TODO: tx timestamp?
 
 
 
-
-
-
-
-
-
 ## Configuring Ethernet
 
 ### Configuring Clocks
 The Ethernet MAC uses three clocks connected to the AHB1 bus:
-ETH
-ETHTX
-ETHRX
+* ETH
+* ETHTX
+* ETHRX
+
+They can be enabled by setting bits `RCC_AHB1ENR_ETHEN`, `RCC_AHB1ENR_ETHTXEN`, and `RCC_AHB1ENR_ETHRXEN` respectively in the `RCC_AHB1ENR` register.
 
 ### Configuring GPIO
 The Ethernet MAC on the STM32H563ZI connects to the PHY via RMII interface. This interface includes the following pins which should be configured as high-speed alt-function 11 (Ethernet) GPIO:
-
-ETH_REF_CLK -> PA1 \
-ETH_MDC     -> PC1 \
-ETH_MDIO    -> PA2 \
-ETH_CRS_DV  -> PA7 \
-ETH_RXD0    -> PC4 \
-ETH_RXD1    -> PC5 \
-ETH_TXD0    -> PG13 \
-ETH_TXD1    -> PB15 \
+```
+ETH_REF_CLK -> PA1
+ETH_MDC     -> PC1
+ETH_MDIO    -> PA2
+ETH_CRS_DV  -> PA7
+ETH_RXD0    -> PC4
+ETH_RXD1    -> PC5
+ETH_TXD0    -> PG13
+ETH_TXD1    -> PB15
 ETH_TX_EN   -> PG11
+```
 
 
 ### Initialize PHY (via MDIO)
 The LAN8742A-CZ-TR PHY is set to autonegotiate out of the box and likely doesn't need modification. However, the ETH <-> PHY interface must be configured to use RMII
 
-1. Enable SBS clock (APB3ENR_SBS)
-2. Set the PHY interface to RMII in the SBS_PMCR register \
-(optional)
-3. Set MDIO clock to a reasonable division of the system clock in the MACMDIOAR register
+1. Enable SBS clock (`APB3ENR_SBS`)
+2. Set the PHY interface to RMII in the SBS_PMCR register
+3. (optional) Set MDIO clock to a reasonable division of the system clock in the `ETH_MACMDIOAR` register
 
+The PHY can be communicated with by writing mode, address, and data to the `ETH_MACMDIOAR` register and waiting for the operation to complete.
 
 ### Configuring MAC
 
-TODO mac address, IP address\
-TODO describe automatic ARP handling\
-TODO filtering rx mac address
+#### Configuring MAC address
+
+The MAC address can be configured by writing the address to ETH_MACA0HR and ETH_MACA0LR. This serves primarily three functions:
+
+1. When the IPv4 Address is also configured in `ETH_MACARPAR`, ARP packet can be offloaded to the MAC
+2. The MAC can be configured to automatically insert the address into frames as they are transmitted, removing the need to write the source address in every frame that is constructed in software.
+2. The MAC can be configured to filter out any packets not destined for this MAC address, lowering netcode pressure in a noisy network.
+
+#### ARP offloading
+
+When the `ARPEN` bit is set in the `ETH_MACCR` register, the MAC will recognize and service incomming ARP requests automatically. ARP packets can then be ignored by enabling broadcast packet filtering in the MAC or by checking for 0b011 in the LT field of the write-back descriptor.
+
+#### Layer 3 filtering
+
+The MAC can be configured to reject any packet not destined for a particular IP address by setting the `ETH_MACPFR_IPFE` bit in `ETH_MACPFR` to enable L3/L4 filtering, and then configuring L3 destination match.
+
+For IPv4, set the `ETH_MACL3L4CR_L3DAM` bit in `ETH_MACL3L4CxR` and then write the IPv4 address of the device to `ETH_MACL3A1RxR`.
+
+For IPv6, set the `ETH_MACL3L4CR_L3DAM` and `ETH_MACL3L4CR_L3PEN` bits in `ETH_MACL3L4CxR`, and then write the 128bit IPv6 address to registers `ETH_MACL3A0RxR, ETH_MACL3A1RxR, ETH_MACL3A2RxR, ETH_MACL3A3RxR` (little endian).

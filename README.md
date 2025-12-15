@@ -5,15 +5,6 @@ A GPS-referenced Stratum 1 network time server with support for Precision Time P
 This implementation is entirely bare metal, all of the code in this repo was written from scratch for the STMicroelectronics NUCLEO-H563ZI platform.
 
 
-## Dependencies:
-
-* arm-none-eabi-*
-* openocd-stm
-
-To build, run `make` from the top level directory.\
-To flash, run `make flash` from the top level directory.
-
-
 ## Overview (TODO)
 
 ## Platform
@@ -60,7 +51,9 @@ Custom netcode allows passing network traffic to multiple separate processes bas
 A command interpreter is exposed on the STLINK-V3EC Virtual COM port (USART3) by default. However, the serial interface used can be easily changed.\
 This interpreter exposes various OS statistics and information on the running application(s).
 
+
 ---
+
 
 ## Implementation details (under construction)
 
@@ -78,7 +71,22 @@ More details about implementing each component can be found in the respective re
 
 [System clock configuration](docs/clocks.md)
 
+
 ---
+
+
+## Dependencies:
+
+* arm-none-eabi-*
+* openocd-stm
+
+
+To build, run `make` from the top level directory.\
+To flash, run `make flash` from the top level directory.
+
+## Debugging:
+
+The VSCode config files useful for debugging are included in this repo under `.vscode`. After opening this repo in VSCode, simply install the Cortex-Debug addon. The integrated debugger should now be functional.
 
 
 ## References / Resources:
