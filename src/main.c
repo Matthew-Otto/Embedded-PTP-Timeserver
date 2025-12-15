@@ -30,11 +30,3 @@ int main(void) {
 
     return 0;
 }
-
-/*
-after processing a frame, 
-trigger GPDMA to put payload into some buffer
-when that DMA finishes, release the ETH buffer back to its DMA
-
-if the frame is invalid, just release its buffer back to eth dma immediately
-*/

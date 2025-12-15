@@ -6,8 +6,8 @@
 #include "fifo.h"
 
 typedef struct {
-    FIFO_t *tx_fifo;
-    FIFO_t *rx_fifo;
+    FIFO8_t *tx_fifo;
+    FIFO8_t *rx_fifo;
     USART_TypeDef *uart;
 } uart_desc_t;
 

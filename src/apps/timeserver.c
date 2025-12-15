@@ -26,12 +26,16 @@ static ntp_packet_t response = {
     .ref_id = REF_ID,
 };
 
+static inline uint64_t utc_to_ntp(uint64_t utc_ts) {
+    return utc_ts + NTP_TIMESTAMP_DELTA;
+}
+
 void timeserver(void) {
-    mFIFO_t *socket_buffer = open_socket(IP_PROTO_UDP, PORT_NTP);
+    FIFO_t *socket_buffer = open_socket(IP_PROTO_UDP, PORT_NTP);
     
     udp_socket_t *socket;
     while (true) {
-        mfifo_get(socket_buffer, &socket);
+        fifo_get(socket_buffer, &socket);
         uint64_t rx_time = get_time();
 
         ntp_packet_t *request = (ntp_packet_t *)socket->payload;
@@ -48,14 +52,14 @@ void timeserver(void) {
         response.tx_ts = htonll(utc_to_ntp(get_time()));
 
         // send response
-        uint8_t *buffer = ETH_get_tx_buffer();
+        uint8_t *buffer = ETH_pkt_alloc_tx();
         
         if (buffer != NULL) {
             uint16_t length = 0;
             length += build_udp_header(buffer, PORT_NTP, socket->src_port, (uint8_t *)&response, sizeof(ntp_packet_t));
             length += build_ipv4_header(buffer - length, socket->src_ip, length, IP_PROTO_UDP, 0);
             length += ETH_build_header(buffer - length, socket->src_mac, ETHERTYPE_IPv4);
-            ETH_send_frame(buffer - length, length);
+            ETH_send_frame(buffer - length, length, false);
         }
 
         // free socket
@@ -82,8 +86,3 @@ uint64_t get_time(void) {
     // combine both timestamps into a single q32.32 value
     return ((uint64_t)sec_ts << 32) | (ns_ts << 1);
 }
-
-uint64_t utc_to_ntp(uint64_t utc_ts) {
-    return utc_ts + NTP_TIMESTAMP_DELTA;
-}
-

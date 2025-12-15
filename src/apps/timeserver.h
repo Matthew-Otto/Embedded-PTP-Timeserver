@@ -21,6 +21,5 @@ typedef struct {
 
 void timeserver(void);
 uint64_t get_time(void);
-uint64_t utc_to_ntp(uint64_t utc_ts);
 
 #endif // TIMESERVER_H
