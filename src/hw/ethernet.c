@@ -7,28 +7,17 @@
 #include "ethernet.h"
 #include "network.h"
 
+
+#include "debug.h"
+
 #ifdef BACKUP
 const uint8_t MACAddr[6] = {0x00,0x80,0xE1,0x00,0x00,0x02};
 #else
 const uint8_t MACAddr[6] = {0x00,0x80,0xE1,0x00,0x00,0x01};
 #endif
 
-#define BUFFER_SIZE 1524
-#define PKT_BUFFER_CNT 10
-#define RX_DSC_CNT 8
-#define TX_DSC_CNT 8
 
-// Global variables
-uint32_t base_addend;
-
-// packet buffer
-__attribute__((section(".eth_pkt_buffer")))
-static uint8_t eth_pkt_buffer[PKT_BUFFER_CNT][BUFFER_SIZE];
-
-// Local (static) variables
-// TODO transmit from the main packet buffer
-__attribute__((section(".eth_tx_buffer")))
-static uint8_t eth_tx_buffer[TX_DSC_CNT][BUFFER_SIZE];
+static uint32_t base_addend;
 
 static ETH_rx_desc_u dma_rx_desc[RX_DSC_CNT];
 static uint8_t *dma_rx_block_ptr[RX_DSC_CNT];
@@ -36,39 +25,14 @@ static uint8_t *dma_rx_block_ptr[RX_DSC_CNT];
 static ETH_tx_desc_u dma_tx_desc[TX_DSC_CNT];
 static uint32_t current_rx_desc_idx = 0;
 static uint32_t current_tx_desc_idx = 0;
-static uint32_t current_tx_buffer_idx = 0;
+static uint32_t current_post_tx_desc_idx = 0;
 
 static semaphore_t *rx_semaphore;
-
-
-// BOZO move this
-
-static uint8_t *free_block_root;
-
-void ETH_pkt_buff_init(void) {
-    free_block_root = eth_pkt_buffer[0];
-    for (int i = 0; i < PKT_BUFFER_CNT - 1; i++) {
-        *(uintptr_t *)eth_pkt_buffer[i] = (uintptr_t)eth_pkt_buffer[i+1];
-    }
-    *(uintptr_t *)eth_pkt_buffer[PKT_BUFFER_CNT] = (uintptr_t)NULL;
-}
-
-uint8_t *ETH_alloc_pkt_buff(void) {
-    uint8_t *block = free_block_root;
-    free_block_root = (uint8_t *)*(uintptr_t *)free_block_root;
-    return block;
-}
-
-void ETH_free_pkt_buff(uint8_t *ptr) {
-    *(uintptr_t *)ptr = (uintptr_t)free_block_root;
-    free_block_root = ptr;
-}
-
-// end BOZO
+static semaphore_t *tx_semaphore;
 
 
 // Forward declarations
-static inline void init_read_descriptor(volatile ETH_rx_rd_desc_t *desc, uint16_t idx);
+static inline void init_read_descriptor(uint16_t idx, uint8_t *block_ptr);
 void ETH_IO_init(void);
 void ETH_PHY_init(void);
 void ETH_MAC_init(void);
@@ -84,7 +48,15 @@ void ETH_IRQHandler(void) {
     if (int_src & ETH_DMAISR_DMACIS) { // DMA interrupt
         isr = READ_REG(ETH->DMACSR);
         // Receive frame interrupt
-        if (isr & ETH_DMACIER_RIE) c_signal(rx_semaphore);
+        if (isr & ETH_DMACSR_RI) {
+            c_signal(rx_semaphore);
+            debug_toggle(0);
+        }
+        // Transmit complete interrupt
+        if (isr & ETH_DMACSR_TI) {
+            c_signal(tx_semaphore);
+            debug_toggle(6);
+        }
     }
     else if (int_src & ETH_DMAISR_MACIS) { // MTL interrupt
         isr = READ_REG(ETH->MACISR);
@@ -99,77 +71,60 @@ void ETH_IRQHandler(void) {
 }
 
 
+
 // Checks for valid RX descriptors
 // If one exists, process it before resetting DMA descriptor
-int ETH_receive_frame(uint8_t **frame_ptr, uint64_t *timestamp) {
-    bool frame_desc = false;
-    bool timestamp_desc = false;
+void ETH_receive_frame(uint8_t **frame_ptr, uint64_t *timestamp) {
     ETH_rx_wb_desc_t *wb_desc = &dma_rx_desc[current_rx_desc_idx].wb;
 
-    // Check that DMA has released this descriptor
-    if (wb_desc->status & (0x1<<15))
-        return -1;
-
-    // If no errors, return pointer to buffer
-    if (!(wb_desc->pkt_len & DESC_WB_LEN_ERROR)){
+    // if no errors, return buffer address
+    if (!(wb_desc->status & DESC_WB_LEN_ERROR)) {
         *frame_ptr = dma_rx_block_ptr[current_rx_desc_idx];
-        frame_desc = true;
-    }
-
-    // Check for timestamp
-    if ((wb_desc->status & DESC_WB_STATUS_LAST) && (wb_desc->ext_stat & DESC_WB_EXT_TS_AVAIL) && !(wb_desc->ext_stat & DESC_WB_EXT_TS_DROPPED)) {
-        uint16_t ctx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
-        ETH_rx_ctx_desc_t *ctx_desc = &dma_rx_desc[ctx_desc_idx].ctx;
-
-        // DMA has released own bit and this descriptor is of context type
-        if ((ctx_desc->ctrl & DESC_CTX_VALID) == DESC_CTX_VALID) { 
-            *timestamp = (uint64_t)ctx_desc->timestamp_high << 32 | ctx_desc->timestamp_low;
-            ETH_free_pkt_buff(dma_rx_block_ptr[ctx_desc_idx]);
-            timestamp_desc = true;
-        }
-    }
-
-    if (frame_desc) {
-        // Configure descriptor for receive and release back to DMA
-        init_read_descriptor((ETH_rx_rd_desc_t *)wb_desc, current_rx_desc_idx);
-        // Update current RX descriptor idx
-        current_rx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
-    }
-
-    if (timestamp_desc) {
-        // Configure descriptor for receive and release back to DMA
-        ETH_rx_rd_desc_t *ctx_desc = &dma_rx_desc[current_rx_desc_idx].rd;
-        init_read_descriptor(ctx_desc, current_rx_desc_idx);
-        // Update current RX descriptor idx
-        current_rx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
-    }
-
-    // Update RX descriptor tail pointer;
-    WRITE_REG(ETH->DMACRDTPR, (uint32_t)&dma_rx_desc[current_rx_desc_idx]);
-
-    if (frame_desc) {
-        if (timestamp_desc) return 1;
-        else                return 0;
     } else {
-        return -1;
+        *frame_ptr = NULL;
+    }
+
+    // check if next descriptor contains the rx timestamp
+    bool timestamp_avail = false;
+    if ((wb_desc->ext_stat & DESC_WB_EXT_TS_AVAIL) &&
+        !(wb_desc->ext_stat & DESC_WB_EXT_TS_DROPPED) &&
+        (wb_desc->status & DESC_WB_STATUS_LAST)) {
+        timestamp_avail = true;
+    }
+
+    // reinit descriptor
+    uint8_t *pkt_buff = pkt_alloc_rx();
+    while (pkt_buff == NULL) pkt_buff = pkt_alloc_rx(); // TODO BOZO handle this better
+    init_read_descriptor(current_rx_desc_idx, pkt_buff);
+    
+    if (timestamp_avail) {
+        ETH_rx_ctx_desc_t *ctx_desc = &dma_rx_desc[current_rx_desc_idx].ctx;
+        *timestamp = (uint64_t)ctx_desc->timestamp_high << 32 | ctx_desc->timestamp_low;
+        uint8_t *unused_ptr = dma_rx_block_ptr[current_rx_desc_idx];
+        init_read_descriptor(current_rx_desc_idx, unused_ptr);
+    } else {
+        timestamp = NULL;
     }
 }
 
 
-void ETH_send_frame(uint8_t *buffer, uint16_t length) {
+void init_tx_descriptor(uint8_t *buffer, uint16_t length, bool ptp) {
     // Send an Ethernet frame using DMA.
+    ETH_tx_rd_desc_t *desc = &dma_tx_desc[current_tx_desc_idx].rd;
+    
+    debug_toggle(5);
 
     // Set up packet descriptor
-    volatile ETH_tx_rd_desc_t *desc = &dma_tx_desc[current_tx_desc_idx].rd;
-    //volatile ETH_tx_wb_desc_t *wb_desc = &dma_tx_desc[current_tx_desc_idx].wb;
-   
     desc->buffer1_addr = (uint32_t)buffer;
     desc->buffer1_len = length & 0x3FFF;
-    desc->buffer2_len = 0x1 << 14; // enable timestamp
+    desc->buffer2_len = 0;
+    desc->buffer2_len |= DESC_TX_BUFFER2_IOC; // interrupt on completion
+    if (ptp) desc->buffer2_len |= DESC_TX_BUFFER2_TTSE; // enable timestamp
     desc->ctrl = 0;
-    desc->ctrl |= 0x1 << 29 | 0x1 << 28; // first and last descriptor
-    desc->ctrl |= 0b10 << 23; // src addr insertion
-    desc->ctrl |= 0x1 << 31; // set own bit
+    desc->ctrl |= DESC_TX_FIRST_DESC;
+    desc->ctrl |= DESC_TX_LAST_DESC;
+    desc->ctrl |= DESC_TX_REPLACE_SRC_ADDR;
+    desc->ctrl |= DESC_OWN;
 
     // Update current TX descriptor idx
     current_tx_desc_idx = (current_tx_desc_idx + 1) % TX_DSC_CNT;
@@ -177,18 +132,6 @@ void ETH_send_frame(uint8_t *buffer, uint16_t length) {
     WRITE_REG(ETH->DMACTDTPR, (uint32_t)&dma_tx_desc[current_tx_desc_idx]);
 }
 
-
-// Blocking, will return a pointer to the end of the first available TX buffer
-uint8_t* ETH_get_tx_buffer() {
-    // Check if buffer is free (DMA has released the corresponding descriptor)
-    volatile ETH_tx_wb_desc_t *wb_desc = &dma_tx_desc[current_tx_desc_idx].wb;
-    if (wb_desc->status & (0x1<<31))
-        return NULL;
-
-    uint8_t *buffer = (uint8_t *)eth_tx_buffer[current_tx_buffer_idx] + (BUFFER_SIZE - 1);
-    current_tx_buffer_idx = (current_tx_buffer_idx + 1) % TX_DSC_CNT;
-    return buffer;
-}
 
 // Fills in the correct ethernet header and returns the length of the header
 uint16_t ETH_build_header(uint8_t *buffer, uint8_t *dst_mac, uint16_t ethertype) {
@@ -203,12 +146,13 @@ uint16_t ETH_build_header(uint8_t *buffer, uint8_t *dst_mac, uint16_t ethertype)
 }
 
 
-void ETH_init(semaphore_t *eth_rx_semaphore) {
+void ETH_init(semaphore_t *eth_rx_semaphore, semaphore_t *eth_tx_semaphore) {
     rx_semaphore = eth_rx_semaphore;
+    tx_semaphore = eth_tx_semaphore;
+    
     ETH_IO_init();
     ETH_PHY_init();
     ETH_MAC_init();
-    ETH_pkt_buff_init();
     ETH_DMA_init();
     ETH_int_init();
     ETH_PTP_init();
@@ -297,9 +241,6 @@ void ETH_MAC_init(void) {
     // configure IPv4 address
     WRITE_REG(ETH->MACARPAR, (IPv4_ADDR[0]<<24 | IPv4_ADDR[1]<<16 | IPv4_ADDR[2]<<8 | IPv4_ADDR[3]));
 
-    // Disable MAC address filtering (Promiscuous Mode)
-    WRITE_REG(ETH->MACPFR, ETH_MACPFR_PR);
-
     // operating mode config
     uint32_t cfg = ETH->MACCR;
     cfg |= ETH_MACCR_ARP; // ARP offloading
@@ -308,8 +249,26 @@ void ETH_MAC_init(void) {
     cfg |= ETH_MACCR_CST; // CRC stripping for Type packets
     cfg |= ETH_MACCR_ACS; // automatic pad/crc stripping
     cfg |= ETH_MACCR_FES; // 100 Mbps
-    cfg |= ETH_MACCR_DM; // full duplex
+    cfg |= ETH_MACCR_DM;  // full duplex
     WRITE_REG(ETH->MACCR, cfg);
+
+    // configure filtering
+    cfg = ETH->MACPFR;
+    cfg |= ETH_MACPFR_IPFE; // Layer 3 and Layer 4 Filter Enable
+    cfg |= ETH_MACPFR_DBF;  // Disable broadcast packets
+    WRITE_REG(ETH->MACPFR, cfg);
+
+    // configure IPv4 destination address filter
+    SET_BIT(ETH->MACL3L4C0R, ETH_MACL3L4CR_L3DAM); // enable destination match
+    WRITE_REG(ETH->MACL3A1R0R, 0x0a007b03); // IPv4 Address  TODO BOZO
+
+    // configure IPv6 destination address filter
+    //SET_BIT(ETH->MACL3L4C1R, ETH_MACL3L4CR_L3DAM); // enable destination match
+    //SET_BIT(ETH->MACL3L4C1R, ETH_MACL3L4CR_L3PEN); // IPv6 mode
+    //WRITE_REG(ETH->MACL3A0R1R, 0); // IPv6 address [31:0]
+    //WRITE_REG(ETH->MACL3A1R1R, 0); // IPv6 address [63:32]
+    //WRITE_REG(ETH->MACL3A2R1R, 0); // IPv6 address [95:64]
+    //WRITE_REG(ETH->MACL3A3R1R, 0); // IPv6 address [127:96]
 
     //////// Configure MTL ////////
     SET_BIT(ETH->MTLRQOMR, ETH_MTLRQOMR_DISTCPEF); // don't drop packets that fail CRC
@@ -320,11 +279,20 @@ void ETH_MAC_init(void) {
 }
 
 
-static inline void init_read_descriptor(volatile ETH_rx_rd_desc_t *desc, uint16_t idx) {
+static inline void init_read_descriptor(uint16_t idx, uint8_t *block_ptr) {
     // Configure descriptor for receive and release back to DMA
-    dma_rx_block_ptr[idx] = ETH_alloc_pkt_buff(); // TODO BOZO handle no allocation
-    desc->buffer1_addr = (uint32_t)dma_rx_block_ptr[idx];
+    ETH_rx_rd_desc_t *desc = &dma_rx_desc[idx].rd;
+    desc->buffer1_addr = (uint32_t)block_ptr;
     desc->status = 0xC1; // set own bit , enable interrupt, and buffer1_valid
+    
+    // Keep track of the buffer asssigned to this descriptor
+    dma_rx_block_ptr[idx] = block_ptr;
+
+    // Update current RX descriptor idx
+    current_rx_desc_idx = (current_rx_desc_idx + 1) % RX_DSC_CNT;
+
+    // Update RX descriptor tail pointer;
+    WRITE_REG(ETH->DMACRDTPR, (uint32_t)&dma_rx_desc[current_rx_desc_idx]);
 }
 
 
@@ -337,8 +305,9 @@ void ETH_DMA_init(void) {
 
     // RX descriptors
     for (int i = 0; i < RX_DSC_CNT; i++) {
-        volatile ETH_rx_rd_desc_t *desc = &dma_rx_desc[i].rd;
-        init_read_descriptor(desc, i);
+        uint8_t *block_ptr = pkt_alloc_rx();
+        if (block_ptr == NULL) panic();
+        init_read_descriptor(i, block_ptr);
     }
     // Set Receive Buffers Length
     MODIFY_REG(ETH->DMACRCR, ETH_DMACRCR_RBSZ, BUFFER_SIZE << ETH_DMACRCR_RBSZ_Pos);
@@ -365,8 +334,6 @@ void ETH_int_init() {
 }
 
 void ETH_PTP_init() {
-    uint32_t cfg;
-
     // Mask the Timestamp Trigger interrupt
     CLEAR_BIT(ETH->MACIER, ETH_MACIER_TSIE);
     
@@ -394,67 +361,12 @@ void ETH_PTP_init() {
     SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSINIT); // initialize timestamp value
     while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSINIT)); // wait for completion
 
-    // Enable PTP offloading features
-#define MASTER
-#ifdef MASTER
-    /* // Automatic PTP Sync messages
-    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);
-    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSMSTRENA_Msk, 1 << ETH_MACTSCR_TSMSTRENA_Pos);
-    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSEVNTENA_Msk, 1 << ETH_MACTSCR_TSEVNTENA_Pos);
-    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSIPV4ENA_Msk, 1 << ETH_MACTSCR_TSIPV4ENA_Pos);
-    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSIPENA);
-    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSVER2ENA);
-
-    // Enable PTP offloading
-    cfg = 0;
-    cfg |= ETH_MACPOCR_PTOEN;
-    cfg |= ETH_MACPOCR_ASYNCEN;
-    //cfg |= domain_num << ETH_MACPOCR_DN_Pos;
-    WRITE_REG(ETH->MACPOCR, cfg);
-
-    // Configure Source port identity
-    WRITE_REG(ETH->MACSPI0R, 0xdeadbeef);
-    WRITE_REG(ETH->MACSPI1R, 0xd066f00d);
-    WRITE_REG(ETH->MACSPI2R, 0x1234);
-
-    // Set automatic sync message period
-    MODIFY_REG(ETH->MACLMIR, ETH_MACLMIR_LSI_Msk, 0 << ETH_MACLMIR_LSI_Pos); */
-#else
-    // Automatic PTP Sync messages
-    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_SNAPTYPSEL_Msk, 0 << ETH_MACTSCR_SNAPTYPSEL_Pos);
-    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSMSTRENA_Msk, 0 << ETH_MACTSCR_TSMSTRENA_Pos);
-    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSEVNTENA_Msk, 1 << ETH_MACTSCR_TSEVNTENA_Pos);
-    MODIFY_REG(ETH->MACTSCR, ETH_MACTSCR_TSIPV4ENA_Msk, 1 << ETH_MACTSCR_TSIPV4ENA_Pos);
-    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSIPENA);
-    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSVER2ENA);
-
-    // Fine correction method
-    WRITE_REG(ETH->MACTSAR, 0);
-    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG);
-    while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));
-    //SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSCFUPDT); // use fine correction
-
-    // Enable PTP offloading
-    cfg = 0;
-    cfg |= ETH_MACPOCR_PTOEN;
-    //cfg |= domain_num << ETH_MACPOCR_DN_Pos;
-    WRITE_REG(ETH->MACPOCR, cfg);
-
-    // Configure Source port identity
-    WRITE_REG(ETH->MACSPI0R, 0xdeadbeef);
-    WRITE_REG(ETH->MACSPI1R, 0xd066f00d);
-    WRITE_REG(ETH->MACSPI2R, 0x4321);
-
-    // Number of sync messages received before sending DELAY_REQ
-    MODIFY_REG(ETH->MACLMIR, ETH_MACLMIR_DRSYNCR_Msk, 0 << ETH_MACLMIR_DRSYNCR_Pos);
-#endif
-
-    // Enable timestamp interrupt
-    //SET_BIT(ETH->MACIER, ETH_MACIER_TSIE);
-
     // Enable auxiliary snapshots
     // ATSEN1 = TIM3 TRGO
     WRITE_REG(ETH->MACACR, ETH_MACACR_ATSEN1);
+
+    // Enable timestamping for all packets
+    SET_BIT(ETH->MACTSCR, ETH_MACTSCR_TSENALL);
 }
 
 
@@ -487,7 +399,7 @@ void ETH_update_PTP_TS_fine(const int32_t correction) {
     while (READ_BIT(ETH->MACTSCR, ETH_MACTSCR_TSADDREG));
 }
 
-
+/*
 void ETH_send_timestamp_frame(uint8_t *data, uint16_t length) {
     // Set up context descriptor
     ETH_tx_ctx_desc_t *ctx_desc = &dma_tx_desc[current_tx_desc_idx].ctx;
@@ -501,5 +413,6 @@ void ETH_send_timestamp_frame(uint8_t *data, uint16_t length) {
     // Update TX descriptor tail pointer;
     WRITE_REG(ETH->DMACTDTPR, (uint32_t)&dma_tx_desc[current_tx_desc_idx]);
 
-    ETH_send_frame(data, length);
+    ETH_send_frame(data, length, true);
 }
+ */

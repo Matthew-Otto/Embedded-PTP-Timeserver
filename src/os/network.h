@@ -101,24 +101,52 @@ typedef struct {
     uint32_t src_ip;
     uint16_t src_port;
     uint8_t *payload;
+    uint64_t timestamp;
 } udp_socket_t;
 
+
+typedef struct {
+    uint8_t *buffer;
+    uint16_t length;
+    bool ptp;
+    // TODO mailbox
+} tx_pkt_ctx_t;
+
+
+
 void network_init(int priority);
-mFIFO_t *open_socket(ip_protocol_t proto, int port);
+FIFO_t *open_socket(ip_protocol_t proto, int port);
+void send_frame(uint8_t *buffer, uint16_t length, uint64_t *timestamp);
 
-void network_receive(void);
+// RX functions
 int process_frame(uint8_t *frame);
-
 int process_ipv4(uint8_t *packet, eth_header_t *frame_header);
-
 int process_icmp(icmp_header_t*, ipv4_header_t*, eth_header_t*, uint16_t);
 void process_udp(udp_header_t*, ipv4_header_t*, eth_header_t*, uint16_t);
 
+// TX functions
 uint16_t build_ipv4_header(uint8_t *buffer, uint32_t dst_ip, uint16_t payload_len, 
                            uint8_t protocol, uint16_t id);
 uint16_t build_icmp_reply(uint8_t *buffer, uint16_t id, uint16_t seq_num, 
                           uint8_t *payload, uint16_t payload_len);
 uint16_t build_udp_header(uint8_t *buffer, uint16_t src_port, uint16_t dst_port, 
                           uint8_t *data, uint16_t data_len);
+
+// Tasks
+void network_receive_task(void);
+void network_send_task(void);
+void network_send_complete_task(void);
+
+// memory block allocation
+#define BUFFER_SIZE 1536
+#define RX_PKT_MAX 16
+#define TX_PKT_MAX 16
+#define PKT_BUFFER_CNT 20
+
+void pkt_buff_init(void);
+uint8_t *pkt_alloc_rx(void);
+uint8_t *pkt_alloc_tx(void);
+void pkt_free_rx(uint8_t *ptr);
+void pkt_free_tx(uint8_t *ptr);
 
 #endif // NETWORK_H

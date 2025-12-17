@@ -46,6 +46,10 @@ void fifo_get(FIFO_t *fifo, void *value) {
     c_signal(&fifo->full);
 }
 
+uint32_t fifo_size(FIFO_t *fifo) {
+    return fifo->empty.value;
+}
+
 
 
 // byte fifo (not safe for multi-producer, multi-consumer)

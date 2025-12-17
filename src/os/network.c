@@ -7,6 +7,8 @@
 #include "fifo.h"
 #include "malloc.h"
 
+#include "debug.h"
+
 #ifdef BACKUP
 const uint8_t IPv4_ADDR[4] = {10, 0, 123, 2};
 #else
@@ -16,16 +18,31 @@ const uint8_t IPv4_ADDR[4] = {10, 0, 123, 3};
 static uint32_t SRC_IPv4_ADDR;
 
 static semaphore_t eth_rx_semaphore;
+static semaphore_t eth_tx_semaphore;
+static FIFO_t *tx_fifo;
+static FIFO_t *tx_pending;
 
-static mFIFO_t *upd_port_map[1024] = {NULL};
+static FIFO_t *upd_port_map[1024] = {NULL};
+
+// packet buffer
+__attribute__((section(".pkt_buffer_pool")))
+static uint8_t pkt_buffer_pool[PKT_BUFFER_CNT][BUFFER_SIZE];
+
+static uint8_t *free_block_root;
+static semaphore_t pkt_buff_mutex;
+
+static uint16_t rx_alloc_cnt = 0;
+static uint16_t tx_alloc_cnt = 0;
+
 
 
 // forward declaration
 static uint16_t checksum16(const void *data, uint16_t len);
 
 
-mFIFO_t *open_socket(ip_protocol_t proto, int port) {
-    mFIFO_t *socket_fifo = mfifo_init(8, 4);
+FIFO_t *open_socket(ip_protocol_t proto, int port) {
+    FIFO_t *socket_fifo = fifo_init(8, sizeof(udp_socket_t *));
+    if (socket_fifo == NULL) return NULL;
     if (proto = IP_PROTO_UDP)
         upd_port_map[port] = socket_fifo;
     return socket_fifo;
@@ -35,14 +52,17 @@ mFIFO_t *open_socket(ip_protocol_t proto, int port) {
 void network_init(int priority) {
     SRC_IPv4_ADDR = pack4byte(IPv4_ADDR);
 
+    pkt_buff_init();
     init_semaphore(&eth_rx_semaphore, 0);
-    ETH_init(&eth_rx_semaphore);
-
-    // TODO configure fifos for network processes?
+    init_semaphore(&eth_tx_semaphore, 0);
+    tx_fifo = fifo_init(TX_PKT_MAX, sizeof(tx_pkt_ctx_t));
+    tx_pending = fifo_init(TX_DSC_CNT, sizeof(tx_pkt_ctx_t));
+    ETH_init(&eth_rx_semaphore, &eth_tx_semaphore);
 
     // Add network processes to task schedule
-    add_thread(network_receive, 64, priority);
-    //add_thread(network_send, 64, priority); BOZO
+    add_thread(network_receive_task, 64, priority);
+    add_thread(network_send_task, 64, priority);
+    add_thread(network_send_complete_task, 64, priority);
 }
 
 
@@ -50,18 +70,22 @@ void network_init(int priority) {
 //// Receive //////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void network_receive(void) {
+static uint64_t timestamp;
+
+void network_receive_task(void) {
     uint8_t *frame_ptr;
-    uint64_t timestamp;
     while (1) {
         // counting semaphore, receive packets until no more are ready
         c_wait(&eth_rx_semaphore);
+        debug_toggle(1);
 
         int rc = 0;
-        rc = ETH_receive_frame(&frame_ptr, &timestamp);
+        ETH_receive_frame(&frame_ptr, &timestamp);
+        if (frame_ptr == NULL) continue;
+
         rc = process_frame(frame_ptr);
-        // free packet buffer (BOZO only on valid frameptr)
-        ETH_free_pkt_buff(frame_ptr);
+        // free packet buffer
+        pkt_free_rx(frame_ptr);
     }
 }
 
@@ -110,7 +134,7 @@ int process_icmp(icmp_header_t *icmp, ipv4_header_t *ip_pkt, eth_header_t *frame
         return -1; // Not Echo Request
 
     // respond to ping
-    uint8_t *buffer = ETH_get_tx_buffer();
+    uint8_t *buffer = pkt_alloc_tx();
     if (buffer == NULL)
         return -1;
 
@@ -118,7 +142,8 @@ int process_icmp(icmp_header_t *icmp, ipv4_header_t *ip_pkt, eth_header_t *frame
     length += build_icmp_reply(buffer, ntohs(icmp->id), ntohs(icmp->seq), icmp->data, (pkt_len - sizeof(icmp_header_t)));
     length += build_ipv4_header(buffer - length, ntohl(ip_pkt->src_addr), length, ip_pkt->protocol, ntohs(ip_pkt->id));
     length += ETH_build_header(buffer - length, frame_header->src, ntohs(frame_header->ethertype));
-    ETH_send_frame(buffer - length, length);
+
+    send_frame(buffer - length, length, NULL);
 }
 
 
@@ -127,20 +152,23 @@ void process_udp(udp_header_t *packet, ipv4_header_t *ip_header, eth_header_t *f
 
     if (port > 1024) return;
 
-    mFIFO_t *socket_buffer = upd_port_map[port];
+    FIFO_t *socket_buffer = upd_port_map[port];
 
     if (socket_buffer) {
         udp_socket_t *socket = (udp_socket_t *)malloc(sizeof(udp_socket_t));
         if (socket == NULL) return;
         socket->payload = (uint8_t *)malloc(packet->length);
         if (socket->payload == NULL) return;
-
+        
         memcpy(socket->src_mac, frame_header->src, 6);
         socket->src_ip = ntohl(ip_header->src_addr);
         socket->src_port = ntohs(packet->src_port);
-        memcpy(socket->payload, packet->data, packet->length);
+        memcpy(socket->payload, packet->data, ntohs(packet->length));
+        socket->timestamp = timestamp;
 
-        mfifo_put(socket_buffer, &socket);
+        debug_toggle(2);
+
+        fifo_put(socket_buffer, &socket);
     }
 }
 
@@ -148,6 +176,56 @@ void process_udp(udp_header_t *packet, ipv4_header_t *ip_header, eth_header_t *f
 ///////////////////////////////////////////////////////////////////////////////
 //// Transmit /////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+
+
+void network_send_task(void) {
+    tx_pkt_ctx_t pkt;
+    while (1) {
+        fifo_get(tx_fifo, &pkt); // wait for a packet
+        fifo_put(tx_pending, &pkt); // put packet into in-flight queue (blocks if no descriptors available)
+        init_tx_descriptor(pkt.buffer, pkt.length, pkt.ptp);
+    }
+}
+
+void network_send_complete_task(void) {
+    tx_pkt_ctx_t complete_pkt;
+    while (1) {
+        // counting semaphore, processes complete transmissions until no more are ready
+        c_wait(&eth_tx_semaphore);
+        // get pkt ctx for packet that was just transmitted, release DMA descriptor
+        fifo_get(tx_pending, &complete_pkt);
+
+        debug_toggle(7);
+
+        // release block back to pool
+        pkt_free_tx(complete_pkt.buffer);
+        // if ptp, response to calling process with eh timestamp from DMA
+        if (complete_pkt.ptp) {
+            // TODO get mailbox from pkt ctx,
+            // TODO get timestamp from dma descriptor
+            // TODO put timestamp in mailbox
+        }
+        // TODO release DMA descriptor
+    }
+}
+
+void send_frame(uint8_t *buffer, uint16_t length, uint64_t *timestamp) {
+    tx_pkt_ctx_t pkt;
+    pkt.buffer = buffer;
+    pkt.length = length;
+    if (timestamp != NULL) {
+        pkt.ptp = true;
+        // init mailbox
+        // TODO put mailbox in pkt ctx struct
+        fifo_put(tx_fifo, &pkt);
+        // TODO wait for mailbox to unblock
+        // TODO return mailbox value
+    } else {
+        pkt.ptp = false;
+        fifo_put(tx_fifo, &pkt);
+    }
+    debug_toggle(4);
+}
 
 uint16_t build_ipv4_header(uint8_t *buffer, uint32_t dst_ip, uint16_t payload_len, 
                            uint8_t protocol, uint16_t id) {
@@ -216,4 +294,84 @@ static uint16_t checksum16(const void *data, uint16_t len) {
         sum = (sum & 0xFFFF) + (sum >> 16);
 
     return (uint16_t)(~sum);
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+//// Packet Buffer Management /////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+
+void pkt_buff_init(void) {
+    init_semaphore(&pkt_buff_mutex, 0);
+
+    free_block_root = pkt_buffer_pool[0];
+    for (int i = 0; i < PKT_BUFFER_CNT - 1; i++) {
+        *(uintptr_t *)pkt_buffer_pool[i] = (uintptr_t)pkt_buffer_pool[i+1];
+    }
+    *(uintptr_t *)pkt_buffer_pool[PKT_BUFFER_CNT-1] = (uintptr_t)NULL;
+}
+
+// allocates a block and returns a pointer to the first byte
+uint8_t *pkt_alloc_rx(void) {
+    b_wait(&pkt_buff_mutex);
+
+    if (rx_alloc_cnt >= RX_PKT_MAX) {
+        b_signal(&pkt_buff_mutex);
+        return NULL;
+    }
+
+    uint8_t *block = free_block_root;
+    free_block_root = (uint8_t *)*(uintptr_t *)free_block_root;
+    rx_alloc_cnt += 1;
+
+    b_signal(&pkt_buff_mutex);
+
+    return block;
+}
+
+// allocates a block and returns a pointer to the last byte
+uint8_t *pkt_alloc_tx(void) {
+    b_wait(&pkt_buff_mutex);
+
+    if (tx_alloc_cnt >= TX_PKT_MAX) {
+        b_signal(&pkt_buff_mutex);
+        return NULL;
+    }
+
+    uint8_t *block = free_block_root;
+    free_block_root = (uint8_t *)*(uintptr_t *)free_block_root;
+    tx_alloc_cnt += 1;
+
+    b_signal(&pkt_buff_mutex);
+
+    if (block)
+        return block + (BUFFER_SIZE - 1);
+    else
+        return NULL;
+}
+
+// frees the block at pointer
+void pkt_free_rx(uint8_t *ptr) {
+    b_wait(&pkt_buff_mutex);
+
+    *(uintptr_t *)ptr = (uintptr_t)free_block_root;
+    free_block_root = ptr;
+    rx_alloc_cnt -= 1;
+
+    b_signal(&pkt_buff_mutex);
+}
+
+// frees the block that contains the supplied pointer
+void pkt_free_tx(uint8_t *ptr) {
+    b_wait(&pkt_buff_mutex);
+
+    // round ptr address down to the first byte of the block
+    ptr = ((ptr - (uint8_t *)pkt_buffer_pool) / BUFFER_SIZE) * BUFFER_SIZE + (uint8_t *)pkt_buffer_pool;
+    *(uintptr_t *)ptr = (uintptr_t)free_block_root;
+    free_block_root = ptr;
+    tx_alloc_cnt -= 1;
+
+    b_signal(&pkt_buff_mutex);
 }

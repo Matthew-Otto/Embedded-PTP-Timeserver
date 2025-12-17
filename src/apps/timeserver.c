@@ -7,6 +7,8 @@
 #include "fifo.h"
 #include "heap.h"
 
+#include "debug.h"
+
 
 // 0xE4 when unsynchronized, 0x24 when GPS lock
 #define UNLOCKED_LVM    0xE4
@@ -36,7 +38,9 @@ void timeserver(void) {
     udp_socket_t *socket;
     while (true) {
         fifo_get(socket_buffer, &socket);
-        uint64_t rx_time = get_time();
+        uint8_t *tx_buffer = pkt_alloc_tx();
+        
+        debug_toggle(3);
 
         ntp_packet_t *request = (ntp_packet_t *)socket->payload;
 
@@ -48,18 +52,17 @@ void timeserver(void) {
         response.poll = request->poll;
         response.ref_ts = htonll(utc_to_ntp(last_sync_ts));
         response.orig_ts = request->tx_ts;
-        response.rx_ts = htonll(utc_to_ntp(rx_time));
+        //response.rx_ts = htonll(utc_to_ntp(socket->timestamp)); // BOZO timestamps are colliding somehow
+        response.rx_ts = htonll(utc_to_ntp(get_time()));
         response.tx_ts = htonll(utc_to_ntp(get_time()));
 
         // send response
-        uint8_t *buffer = ETH_pkt_alloc_tx();
-        
-        if (buffer != NULL) {
+        if (tx_buffer != NULL) {
             uint16_t length = 0;
-            length += build_udp_header(buffer, PORT_NTP, socket->src_port, (uint8_t *)&response, sizeof(ntp_packet_t));
-            length += build_ipv4_header(buffer - length, socket->src_ip, length, IP_PROTO_UDP, 0);
-            length += ETH_build_header(buffer - length, socket->src_mac, ETHERTYPE_IPv4);
-            ETH_send_frame(buffer - length, length, false);
+            length += build_udp_header(tx_buffer, PORT_NTP, socket->src_port, (uint8_t *)&response, sizeof(ntp_packet_t));
+            length += build_ipv4_header(tx_buffer - length, socket->src_ip, length, IP_PROTO_UDP, 0);
+            length += ETH_build_header(tx_buffer - length, socket->src_mac, ETHERTYPE_IPv4);
+            send_frame(tx_buffer - length, length, NULL);
         }
 
         // free socket

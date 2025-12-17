@@ -13,4 +13,8 @@ static inline uint32_t get_clock_speed(void) {
     return 250000000;
 }
 
+static int panic(void) {
+    int dereference_null = *(int *)0x0;
+}
+
 #endif // MCU_H

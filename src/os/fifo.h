@@ -18,6 +18,7 @@ typedef struct {
 FIFO_t *fifo_init(uint32_t size, uint32_t elem_size);
 void fifo_put(FIFO_t *fifo, const void *value);
 void fifo_get(FIFO_t *fifo, void *value);
+uint32_t fifo_size(FIFO_t *fifo);
 
 typedef struct {
     semaphore_t full;

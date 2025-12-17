@@ -48,12 +48,8 @@ SECTIONS
         _ebss = .;
     } > SRAM
 
-    .eth_rx_buffer (NOLOAD) : ALIGN(4) {
-        KEEP(*(.eth_rx_buffer))
-    } > SRAM
-    
-    .eth_tx_buffer (NOLOAD) : ALIGN(4) {
-        KEEP(*(.eth_rx_buffer))
+    .pkt_buffer_pool (NOLOAD) : ALIGN(4) {
+        KEEP(*(.pkt_buffer_pool))
     } > SRAM
 
     .heap (NOLOAD) : ALIGN(4) {
