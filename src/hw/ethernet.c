@@ -99,7 +99,7 @@ void ETH_receive_frame(uint8_t **frame_ptr, uint64_t *timestamp) {
     
     if (timestamp_avail) {
         ETH_rx_ctx_desc_t *ctx_desc = &dma_rx_desc[current_rx_desc_idx].ctx;
-        *timestamp = (uint64_t)ctx_desc->timestamp_high << 32 | ctx_desc->timestamp_low;
+        *timestamp = ((uint64_t)ctx_desc->timestamp_high << 32) | (ctx_desc->timestamp_low << 1);
         uint8_t *unused_ptr = dma_rx_block_ptr[current_rx_desc_idx];
         init_read_descriptor(current_rx_desc_idx, unused_ptr);
     } else {

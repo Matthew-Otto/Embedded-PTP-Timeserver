@@ -52,8 +52,7 @@ void timeserver(void) {
         response.poll = request->poll;
         response.ref_ts = htonll(utc_to_ntp(last_sync_ts));
         response.orig_ts = request->tx_ts;
-        //response.rx_ts = htonll(utc_to_ntp(socket->timestamp)); // BOZO timestamps are colliding somehow
-        response.rx_ts = htonll(utc_to_ntp(get_time()));
+        response.rx_ts = htonll(utc_to_ntp(socket->timestamp));
         response.tx_ts = htonll(utc_to_ntp(get_time()));
 
         // send response
