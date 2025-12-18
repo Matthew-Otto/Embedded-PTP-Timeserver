@@ -6,9 +6,6 @@
 #include "ethernet.h"
 #include "fifo.h"
 
-
-extern const uint8_t IPv4_ADDR[4];
-
 #define htons(x) __builtin_bswap16(x)
 #define htonl(x) __builtin_bswap32(x)
 #define htonll(x) __builtin_bswap64(x)
@@ -20,6 +17,12 @@ static inline uint32_t pack4byte (const uint8_t bytes[4]) {
     uint32_t v;
     __builtin_memcpy(&v, bytes, sizeof(v));
     return v;
+}
+
+static inline uint32_t pack4byte_big (const uint8_t bytes[4]) {
+    uint32_t v;
+    __builtin_memcpy(&v, bytes, sizeof(v));
+    return __builtin_bswap32(v);
 }
 
 

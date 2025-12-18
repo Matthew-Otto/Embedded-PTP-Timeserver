@@ -12,12 +12,15 @@ typedef struct {
 } uart_desc_t;
 
 void init_uart(uint8_t uart_idx, int32_t baudrate, uint16_t fifo_size, uint8_t int_pri);
+void uart_disable(uint8_t uart_idx);
+void uart_enable(uint8_t uart_idx);
 void uart_in_string(uint8_t uart_idx, char *buff, uint32_t buff_size);
 int uart_in_string_nonblocking(uint8_t uart_idx, char *buff, uint32_t buff_size);
 void uart_in_string_reflect(uint8_t uart_idx, char *buff, uint32_t buff_size);
 bool uart_search_for_char_nonblocking(uint8_t uart_idx, char search_char);
 void uart_out_char(uint8_t uart_idx, uint8_t data);
 void uart_out_string(uint8_t uart_idx, char *buff);
+
 
 void USART1_IRQHandler(void);
 void USART2_IRQHandler(void);

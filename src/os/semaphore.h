@@ -13,6 +13,9 @@ struct semaphore {
 // initializes semaphore
 void init_semaphore(semaphore_t *sem, int32_t value);
 
+// reset semaphore value and unblock threads
+void reset_semaphore(semaphore_t *sem, int32_t value);
+
 // sets semaphore to 1
 // blocks until semaphore is acquired
 void b_wait(semaphore_t *sem);

@@ -33,6 +33,8 @@ FIFO8_t* fifo8_init(uint32_t size);
 void fifo8_put(FIFO8_t *fifo, uint8_t data);
 int fifo8_put_nonblock(FIFO8_t *fifo, uint8_t data);
 void fifo8_get(FIFO8_t *fifo, uint8_t *data);
+int fifo8_get_nonblock(FIFO8_t *fifo, uint8_t *data);
 int32_t fifo8_size(FIFO8_t *fifo);
+void fifo8_clear(FIFO8_t *fifo);
 
 #endif // FIFO_H

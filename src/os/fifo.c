@@ -80,6 +80,7 @@ void fifo8_put(FIFO8_t *fifo, uint8_t data) {
 int fifo8_put_nonblock(FIFO8_t *fifo, uint8_t data) {
     if (fifo->full.value == 0) return -1;
     fifo8_put(fifo, data);
+    return 0;
 }
 
 void fifo8_get(FIFO8_t *fifo, uint8_t *data) {
@@ -91,6 +92,20 @@ void fifo8_get(FIFO8_t *fifo, uint8_t *data) {
     c_signal(&fifo->full);
 }
 
+int fifo8_get_nonblock(FIFO8_t *fifo, uint8_t *data) {
+    if (fifo->empty.value == 0) return -1;
+    fifo8_get(fifo, data);
+    return 0;
+}
+
 int32_t fifo8_size(FIFO8_t *fifo) {
     return fifo->empty.value;
+}
+
+void fifo8_clear(FIFO8_t *fifo) {
+    reset_semaphore(&fifo->full, fifo->size);
+    reset_semaphore(&fifo->empty, 0);
+
+    fifo->head = 0;
+    fifo->tail = 0;
 }

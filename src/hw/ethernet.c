@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "mcu.h"
+#include "config.h"
 #include "gpio.h"
 #include "semaphore.h"
 #include "ethernet.h"
@@ -9,12 +10,6 @@
 
 
 #include "debug.h"
-
-#ifdef BACKUP
-const uint8_t MACAddr[6] = {0x00,0x80,0xE1,0x00,0x00,0x02};
-#else
-const uint8_t MACAddr[6] = {0x00,0x80,0xE1,0x00,0x00,0x01};
-#endif
 
 
 static uint32_t base_addend;
@@ -139,7 +134,7 @@ uint16_t ETH_build_header(uint8_t *buffer, uint8_t *dst_mac, uint16_t ethertype)
     eth_header_t *frame = (eth_header_t *)(buffer - header_len);
 
     memcpy(frame->dest, dst_mac, 6);
-    memcpy(frame->src, MACAddr, 6);
+    memcpy(frame->src, MAC_ADDR, 6);
     frame->ethertype = htons(ethertype);
 
     return header_len;
@@ -234,9 +229,9 @@ void ETH_MAC_init(void) {
 
     //////// Configure MAC ////////
     // configure MAC address
-    WRITE_REG(ETH->MACA0HR, ((uint32_t)MACAddr[5] << 8 | (uint32_t)MACAddr[4]));
-    WRITE_REG(ETH->MACA0LR, ((uint32_t)MACAddr[3] << 24 | (uint32_t)MACAddr[2] << 16 | 
-                             (uint32_t)MACAddr[1] << 8 | (uint32_t)MACAddr[0]));
+    WRITE_REG(ETH->MACA0HR, ((uint32_t)MAC_ADDR[5] << 8 | (uint32_t)MAC_ADDR[4]));
+    WRITE_REG(ETH->MACA0LR, ((uint32_t)MAC_ADDR[3] << 24 | (uint32_t)MAC_ADDR[2] << 16 | 
+                             (uint32_t)MAC_ADDR[1] << 8 | (uint32_t)MAC_ADDR[0]));
 
     // configure IPv4 address
     WRITE_REG(ETH->MACARPAR, (IPv4_ADDR[0]<<24 | IPv4_ADDR[1]<<16 | IPv4_ADDR[2]<<8 | IPv4_ADDR[3]));
@@ -260,7 +255,7 @@ void ETH_MAC_init(void) {
 
     // configure IPv4 destination address filter
     SET_BIT(ETH->MACL3L4C0R, ETH_MACL3L4CR_L3DAM); // enable destination match
-    WRITE_REG(ETH->MACL3A1R0R, 0x0a007b03); // IPv4 Address  TODO BOZO
+    WRITE_REG(ETH->MACL3A1R0R, pack4byte_big(IPv4_ADDR)); // IPv4 Address  TODO BOZO
 
     // configure IPv6 destination address filter
     //SET_BIT(ETH->MACL3L4C1R, ETH_MACL3L4CR_L3DAM); // enable destination match

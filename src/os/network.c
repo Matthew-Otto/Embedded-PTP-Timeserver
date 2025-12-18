@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "mcu.h"
+#include "config.h"
 #include "network.h"
 #include "schedule.h"
 #include "ethernet.h"
@@ -9,11 +10,6 @@
 
 #include "debug.h"
 
-#ifdef BACKUP
-const uint8_t IPv4_ADDR[4] = {10, 0, 123, 2};
-#else
-const uint8_t IPv4_ADDR[4] = {10, 0, 123, 3};
-#endif
 
 static uint32_t SRC_IPv4_ADDR;
 

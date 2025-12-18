@@ -8,6 +8,15 @@ void init_semaphore(semaphore_t *sem, int32_t value) {
     sem->bthreads_root = NULL;
 }
 
+void reset_semaphore(semaphore_t *sem, int32_t value) {
+    sem->value = value;
+    // if value is being reset to nonzero, unblock up to that many threads
+    for (int i = 0; i < value; i++) {
+        if (sem->bthreads_root == NULL) break;
+        sched_unblock(sem);
+    }
+}
+
 // blocks until semaphore is acquired (0) then acquires it (1)
 void b_wait(semaphore_t *sem) {
     uint32_t primask = start_critical();

@@ -7,8 +7,6 @@
 #include "semaphore.h"
 #include "fifo.h"
 
-extern const uint8_t MACAddr[6];
-
 #define RX_DSC_CNT 8
 #define TX_DSC_CNT 8
 

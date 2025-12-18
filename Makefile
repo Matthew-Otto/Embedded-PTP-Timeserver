@@ -19,7 +19,7 @@ DEBUG = 1
 OPT = -O0 #-Og
 LIBS = -lm -lnosys
 LDSCRIPT = $(SRC_DIR)stm32h563.ld
-INC = -I$(SRC_DIR)/inc -I$(SRC_DIR)/hw -I$(SRC_DIR)/os -I$(SRC_DIR)/network -I$(SRC_DIR)/apps
+INC = -I$(SRC_DIR) -I$(SRC_DIR)/inc -I$(SRC_DIR)/hw -I$(SRC_DIR)/os -I$(SRC_DIR)/network -I$(SRC_DIR)/apps
 
 ASFLAGS = $(MCU) $(OPT)
 CFLAGS = $(MCU) -specs=nano.specs $(OPT) $(INC) -Wall -fdata-sections -ffunction-sections -MMD -MP

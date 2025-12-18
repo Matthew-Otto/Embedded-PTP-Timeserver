@@ -47,6 +47,19 @@ void init_uart(uint8_t uart_idx, int32_t baudrate, uint16_t fifo_size, uint8_t i
     NVIC_EnableIRQ(uart_irq_num);
 }
 
+void uart_disable(uint8_t uart_idx) {
+    // disable UART
+    CLEAR_BIT(desc[uart_idx].uart->CR1, USART_CR1_UE);
+    // clear hw FIFO
+    SET_BIT(desc[uart_idx].uart->RQR, USART_RQR_RXFRQ);
+    // clear sw FIFO
+    fifo8_clear(desc[uart_idx].rx_fifo);
+}
+
+void uart_enable(uint8_t uart_idx) {
+    SET_BIT(desc[uart_idx].uart->CR1, USART_CR1_UE);
+}
+
 static inline void uart_interrupt_handler(uint8_t uart_idx, USART_TypeDef *uart) {
     uint8_t data;
     // if data in rx hw fifo, put it in software fifo
@@ -58,12 +71,10 @@ static inline void uart_interrupt_handler(uint8_t uart_idx, USART_TypeDef *uart)
     // while tx hw fifo not full
     while (READ_BIT(uart->ISR, USART_ISR_TXE_TXFNF)) {
         // if sw fifo empty, disable hw fifo not full interrupt
-        if (!fifo8_size(desc[uart_idx].tx_fifo)) {
+        if (fifo8_get_nonblock(desc[uart_idx].tx_fifo, &data) < 0) {
             CLEAR_BIT(uart->CR1, USART_CR1_TXFEIE);
             break;
         }
-        
-        fifo8_get(desc[uart_idx].tx_fifo, &data); // TODO nonblock
         uart->TDR = data;
     }
 }
@@ -173,7 +184,6 @@ void uart_out_string(uint8_t uart_idx, char *buff) {
         uart_out_char(uart_idx, *buff++);
     }
 }
-
 
 void USART1_IRQHandler(void) {
     uart_interrupt_handler(1, USART1);

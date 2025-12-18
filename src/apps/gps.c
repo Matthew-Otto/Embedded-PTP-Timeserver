@@ -3,6 +3,7 @@
 #include <string.h>
 #include <limits.h>
 #include <time.h>
+#include "config.h"
 #include "gps.h"
 #include "semaphore.h"
 #include "uart.h"
@@ -127,12 +128,12 @@ void gps_timesync(void) {
     gps_init();
     init_semaphore(&nmea_burst_sync, 1);
     
+    init_uart(UART_IDX, GPS_BAUD, 256, 3);
 #ifdef BACKUP
-    init_uart(UART_IDX, 9600, 256, 3);
     uart_out_string(UART_IDX, "$PUBX,40,ZDA,0,1,0,0*45\r\n");
-#else
-    init_uart(UART_IDX, 115200, 256, 3);
+    sleep(100);
 #endif
+    uart_disable(UART_IDX);
 
     enable_LED(RED_LED);
 
@@ -150,8 +151,12 @@ void gps_timesync(void) {
         gps_data.valid_messages = 0;
         while((gps_data.valid_messages & VALID_MSK) != VALID_MSK) {
             uart_in_string(UART_IDX, strbuf, BUFF_SIZE);
+            printf("%s\r\n\n", strbuf);
             parse_nmea_sentence(strbuf);
         }
+        // disable uart to clear FIFOs and ignore the rest of the NMEA data
+        uart_disable(UART_IDX);
+
         if (!gps_data.fix_valid) continue;
 
         disable_LED(RED_LED);
@@ -220,7 +225,7 @@ void gps_timesync(void) {
             timing_lock = false;
             enable_LED(YELLOW_LED);
         }
-        disable_LED(GREEN_LED);  
+        disable_LED(GREEN_LED);
     }
 }
 
@@ -240,6 +245,8 @@ void TIM3_IRQHandler(void) {
         enable_LED(GREEN_LED);
     }
 
+    // start UART so it can receive NMEA data
+    uart_enable(UART_IDX);
     // signal gps_timesync task to read NMEA data
     b_signal(&nmea_burst_sync);
 }
