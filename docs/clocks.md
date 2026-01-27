@@ -9,10 +9,12 @@ The HSE input must then be enabled to drive PLL1 from the external crystal.
 
 To configure the system clock with a frequency of 250MHz assuming a 25 MHz source signal (HSE), configure the PPL parameters like so:
 
-M = 1;   // pre-div1
-N = 20;  // mult
-P = 2;   // post-div
-Q = 2;   // post-div
-R = 2;   // post-div
+```
+M = 1   (pre-div1)
+N = 20  (mult)
+P = 2   (post-div)
+Q = 2   (post-div)
+R = 2   (post-div)
+```
 
-Complete code can be found in `src/hw/clocks.c/init_sysclk()`
+Complete initialization code can be found in `src/hw/clocks.c/init_sysclk()`
