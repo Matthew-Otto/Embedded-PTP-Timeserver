@@ -55,7 +55,7 @@ This interpreter exposes various OS statistics and information on the running ap
 ---
 
 
-## Implementation details (under construction)
+## Implementation details
 
 More details about implementing each component can be found in the respective readme's linked below:
 

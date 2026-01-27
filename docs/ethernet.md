@@ -10,10 +10,7 @@ To receive, the application writes a pointer to an empty memory block into a DMA
 When a valid packet is received from the network and passes MAC filtering, the DMA transfers the packet to memory referenced by the first available descriptor. An Ethernet DMA interrupt is then raised. The ISR unblocks the network semaphore, and the application processes the packet.
 Once the packet has been processed, the memory block containing the packet should be freed so it can be assigned to a new RX descriptor.
 
-POTENTIAL BUG: is enough packets are received, blocks will be exhausted and new RX descriptors will not be created. There is currently method to recover from this state.
-
-TODO: rx timestamp
-
+POTENTIAL BUG: if enough packets are received, blocks will be exhausted and new RX descriptors will not be created. There is currently method to recover from this state.
 
 ### Transmit
 
@@ -23,12 +20,6 @@ Packets are sent by passing the pointer to and length of a complete ethernet fra
 
 This function attempts to acquire an available transmit DMA descriptor. If sucessful, it will write the pointer to the frame in this descriptor and pass it to the DMA engine. If unsucessful, this function will instead put the frame pointer in a FIFO that will be serviced by the DMA transmit complete interrupt.
 When the DMA notifies that a trasmit is complete, a frame pointer is popped from the FIFO and inserted into the newly freed descriptor.
-
-(TODO: can I have DMA almost out of descriptor interrupts like uart hw fifo?)
-
-TODO: tx timestamp?
-
-
 
 
 ## Configuring Ethernet
