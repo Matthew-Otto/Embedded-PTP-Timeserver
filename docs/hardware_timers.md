@@ -31,8 +31,8 @@ Configure GPIO (pin D2) to trigger event on timer 3:
 configure_pin(GPIOD, GPIO_PIN_2, GPIO_MODE_AF_PP, GPIO_PULLDOWN, GPIO_SPEED_FREQ_VERY_HIGH, GPIO_AF2_TIM3);
 ```
 
-Configure timer 3 to immediately fire TRGO upon receiving an input event:\
-``` c title="src/apps/gps.c/gps_init()"
+Configure timer 3 to immediately fire TRGO upon receiving an input event:
+``` c src/apps/gps.c/gps_init()
 // enable TIM3 peripheral clock
 SET_BIT(RCC->APB1LENR, RCC_APB1LENR_TIM3EN);
 (void)READ_BIT(RCC->APB1LENR, RCC_APB1LENR_TIM3EN);

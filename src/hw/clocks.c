@@ -49,7 +49,7 @@ void init_sysclk(void) {
     MODIFY_REG(RCC->PLL1CFGR, RCC_PLL1CFGR_PLL1VCOSEL, 0);
     // Enable PLL1 System Clock output
     SET_BIT(RCC->PLL1CFGR, RCC_PLL1CFGR_PLL1PEN);
-    // Enable PLL1 DIVQ divier output (for clk_ptp_ref_i)
+    // Enable PLL1 DIVQ divider output (for clk_ptp_ref_i)
     SET_BIT(RCC->PLL1CFGR, RCC_PLL1CFGR_PLL1QEN);
 
     // Enable PLL1
